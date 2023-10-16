@@ -8,6 +8,10 @@ import (
 	"slices"
 	"flag"
 	"net"
+	"os/exec"
+	"os"
+	"log"
+	"time"
 )
 
 type OverlayFS struct {
@@ -20,7 +24,7 @@ type OverlayFS struct {
 	billy.Change
 }
 
-func (fs OverlayFS) New(options []string, mountpoint string) (OverlayFS){
+func NewFS(options []string, mountpoint string) (OverlayFS){
 	result:=OverlayFS{}
 	
 	result.paths=make([]string,0)
@@ -40,11 +44,41 @@ func (fs OverlayFS) New(options []string, mountpoint string) (OverlayFS){
 	return result
 }
 
-func runServer(args []string){
-	listener, err := net.Listen("tcp", ":10000")
+func runServer(options []string,mountpoint string){
+	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
+	panicOnErr(err, "starting TCP listener")
+	fs:=NewFS(options,mountpoint)
+	handler := nfshelper.NewNullAuthHandler(fs)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 1)
+	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
-	
+
+func panicOnErr(err error, desc ...interface{}) {
+	if err == nil {
+		return
+	}
+	log.Println(desc...)
+	log.Panicln(err)
+}
+
 func main(){
+flag.Parse()
+args:=flag.Args()
 
+options:=args[:len(args)-1]
+mountpoint:=args[len(args)-1]
+go runServer(options,mountpoint);
 
+for {
+	conn, _ := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", "10000"), 1*time.Millisecond)
+	if conn != nil {
+		conn.Close()
+		break
+	}
+}
+
+command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3","127.0.0.1:/", mountpoint)
+command.Stdout = os.Stdout
+command.Stderr = os.Stderr
+command.Run()
 }
