@@ -12,6 +12,7 @@ import (
 	"os"
 	"log"
 	"time"
+	"path"
 )
 
 type OverlayFS struct {
@@ -44,6 +45,35 @@ func NewFS(options []string, mountpoint string) (OverlayFS){
 	return result
 }
 
+func (fs OverlayFS) joinRelative(Path string) ([]string){
+	result:=make([]string,0,len(fs.paths))
+	for i, _ := range fs.paths{
+		result=append(result,path.Join(fs.paths[i],Path))
+	}
+	return result
+}
+func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
+dirs:=fs.joinRelative(path)
+result:=make([]os.FileInfo,0)
+for _, dir :=range dirs{
+	dirEntries,_:=os.ReadDir(dir)
+	for _, entry:= range dirEntries{
+		info,_:=entry.Info()
+		result=append(result,info)
+	}
+}
+return result,nil
+}
+
+func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
+files:=fs.joinRelative(filename)
+file, _:=os.Open(files[0])
+return file.Stat()
+}
+
+func (fs OverlayFS) Join(elem ...string) string{
+	return path.Join(elem...)
+}
 func runServer(options []string,mountpoint string){
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
@@ -77,7 +107,7 @@ for {
 	}
 }
 
-command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3","127.0.0.1:/", mountpoint)
+command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp","-v","127.0.0.1:/", mountpoint)
 command.Stdout = os.Stdout
 command.Stderr = os.Stderr
 command.Run()
