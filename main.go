@@ -13,6 +13,9 @@ import (
 	"log"
 	"time"
 	"path"
+	"fmt"
+	"os/signal"
+	"syscall"
 )
 
 type OverlayFS struct {
@@ -52,7 +55,20 @@ func (fs OverlayFS) joinRelative(Path string) ([]string){
 	}
 	return result
 }
+
+func (fs OverlayFS) findFirstExisting(Path string) string{
+possibleFiles:=fs.joinRelative(Path)
+for _, file := range possibleFiles{
+_,err:=os.Stat(file);
+if err==nil{
+return file
+}
+}
+return possibleFiles[len(possibleFiles)-1]
+}
+
 func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
+fmt.Println("Dir: "+path)
 dirs:=fs.joinRelative(path)
 result:=make([]os.FileInfo,0)
 for _, dir :=range dirs{
@@ -62,16 +78,51 @@ for _, dir :=range dirs{
 		result=append(result,info)
 	}
 }
+fmt.Println("Files:",result)
 return result,nil
 }
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
-files:=fs.joinRelative(filename)
-file, _:=os.Open(files[0])
+fmt.Println("Stat:",filename)
+file, _:=os.Open(fs.findFirstExisting(filename))
 return file.Stat()
 }
 
+//make function that finds the file in the first directory where it exists, and return it
+//For deleting, delete from the first RW, and mask it (pretend like it doesn't exist)
+//For creating, just make it in the first RW directory
+func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
+fmt.Println("Lstat:",filename)
+return os.Lstat(fs.findFirstExisting(filename))
+}
+
+type OverlayFile struct{
+	*os.File
+}
+
+func (*OverlayFile) Unlock() error{
+	return nil
+}
+
+func (*OverlayFile) Lock() error{
+	return nil
+}
+
+func (fs OverlayFS) Open(filename string) (billy.File, error){
+fmt.Println("Open:",filename)
+open,err:=os.Open(fs.findFirstExisting(filename))
+return &OverlayFile{open},err
+}
+
+func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
+fmt.Println("Openfile:",filename)
+fmt.Println(filename)
+open,err:=os.OpenFile(fs.findFirstExisting(filename),flag,perm)
+return &OverlayFile{open},err
+}
+
 func (fs OverlayFS) Join(elem ...string) string{
+	fmt.Println("Join:",elem)
 	return path.Join(elem...)
 }
 func runServer(options []string,mountpoint string){
@@ -79,7 +130,7 @@ func runServer(options []string,mountpoint string){
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
-	cacheHelper := nfshelper.NewCachingHandler(handler, 1)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
 
@@ -92,6 +143,14 @@ func panicOnErr(err error, desc ...interface{}) {
 }
 
 func main(){
+sigs := make(chan os.Signal, 1)
+signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+done := make(chan bool, 1)
+go func() {
+	<-sigs
+	done <- true
+	}()
+	
 flag.Parse()
 args:=flag.Args()
 
@@ -107,8 +166,15 @@ for {
 	}
 }
 
-command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp","-v","127.0.0.1:/", mountpoint)
-command.Stdout = os.Stdout
-command.Stderr = os.Stderr
-command.Run()
+mount_command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl","-vvv","127.0.0.1:/", mountpoint)
+mount_command.Stdout = os.Stdout
+mount_command.Stderr = os.Stderr
+mount_command.Run()
+<-done
+
+unmount_command:=exec.Command("sudo","umount", mountpoint)
+unmount_command.Stdout = os.Stdout
+unmount_command.Stderr = os.Stderr
+unmount_command.Run()
 }
+//wait until SIGTERM or SIGINT, then unmount
