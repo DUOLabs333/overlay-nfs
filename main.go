@@ -28,6 +28,18 @@ type OverlayFS struct {
 	billy.Change
 }
 
+type OverlayFile struct{
+	*os.File
+}
+
+func (*OverlayFile) Unlock() error{
+	return nil
+}
+
+func (*OverlayFile) Lock() error{
+	return nil
+}
+
 func NewFS(options []string, mountpoint string) (OverlayFS){
 	result:=OverlayFS{}
 	
@@ -57,74 +69,95 @@ func (fs OverlayFS) joinRelative(Path string) ([]string){
 }
 
 func (fs OverlayFS) findFirstExisting(Path string) string{
-possibleFiles:=fs.joinRelative(Path)
-for _, file := range possibleFiles{
-_,err:=os.Stat(file);
-if err==nil{
-return file
-}
-}
-return possibleFiles[len(possibleFiles)-1]
-}
-
-func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
-fmt.Println("Dir: "+path)
-dirs:=fs.joinRelative(path)
-result:=make([]os.FileInfo,0)
-for _, dir :=range dirs{
-	dirEntries,_:=os.ReadDir(dir)
-	for _, entry:= range dirEntries{
-		info,_:=entry.Info()
-		result=append(result,info)
+	possibleFiles:=fs.joinRelative(Path)
+	for _, file := range possibleFiles{
+		_,err:=os.Stat(file);
+		if err==nil{
+			return file
+		}
 	}
-}
-fmt.Println("Files:",result)
-return result,nil
-}
-
-func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
-fmt.Println("Stat:",filename)
-file, _:=os.Open(fs.findFirstExisting(filename))
-return file.Stat()
-}
-
-//make function that finds the file in the first directory where it exists, and return it
-//For deleting, delete from the first RW, and mask it (pretend like it doesn't exist)
-//For creating, just make it in the first RW directory
-func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
-fmt.Println("Lstat:",filename)
-return os.Lstat(fs.findFirstExisting(filename))
-}
-
-type OverlayFile struct{
-	*os.File
-}
-
-func (*OverlayFile) Unlock() error{
-	return nil
-}
-
-func (*OverlayFile) Lock() error{
-	return nil
-}
-
-func (fs OverlayFS) Open(filename string) (billy.File, error){
-fmt.Println("Open:",filename)
-open,err:=os.Open(fs.findFirstExisting(filename))
-return &OverlayFile{open},err
-}
-
-func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
-fmt.Println("Openfile:",filename)
-fmt.Println(filename)
-open,err:=os.OpenFile(fs.findFirstExisting(filename),flag,perm)
-return &OverlayFile{open},err
+	return possibleFiles[len(possibleFiles)-1]
 }
 
 func (fs OverlayFS) Join(elem ...string) string{
 	fmt.Println("Join:",elem)
 	return path.Join(elem...)
 }
+
+func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
+	fmt.Println("Dir: "+path)
+	dirs:=fs.joinRelative(path)
+	result:=make([]os.FileInfo,0)
+	
+	for _, dir :=range dirs{
+		dirEntries,_:=os.ReadDir(dir)
+		for _, entry:= range dirEntries{
+			info,_:=entry.Info()
+			result=append(result,info)
+		}
+	}
+	fmt.Println("Files:",result)
+	return result,nil
+}
+
+func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
+	fmt.Println("Stat:",filename)
+	file, _:=os.Open(fs.findFirstExisting(filename))
+	return file.Stat()
+}
+
+func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
+	fmt.Println("Lstat:",filename)
+	return os.Lstat(fs.findFirstExisting(filename))
+}
+
+func (fs OverlayFS) Open(filename string) (billy.File, error){
+	fmt.Println("Open:",filename)
+	open,err:=fs.OpenFile(fs.findFirstExisting(filename),os.O_RDONLY,0)
+	return &OverlayFile{open},err
+}
+
+//If O_RDONLY, O_WRONLY, or O_RDWR is specified and RO directory, then replace with O_RDONLY
+//If O_CREATE is specified
+
+/* If filename in deleted:
+If O_CREATE:
+	if file is successfully created, remove from deleted (not neccessarily delete folders/file, but change created time to 1)
+Else:
+	Return notexist
+*/
+func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
+	original_filename:=filename
+	
+	temp_filename:=fs.findFirstExisting(filename)
+	_, err:=os.Stat(temp_filename)
+	if !os.IsNotExist(err){
+		filename=temp_filename
+	}else{
+		if (flag & os.O_CREATE){
+			allRO:=true
+			for i,_ := range fs.paths{
+				if fs.modes[i]=="RW"{
+					filename=os.Join(fs.ppaths[i],filename)
+					allRO=false
+					break
+				}
+			}
+			if allRO{
+				return billy.File{}, os.ErrPermission
+			}
+		}
+	inRO:=false
+	for i,_:= range fs.paths{
+		
+fmt.Println("Openfile:",filename)
+open,err:=os.OpenFile(fs.findFirstExisting(filename),flag,perm)
+return &OverlayFile{open},err
+}
+
+
+//Create --- findFirstexisting if the file exists, return error already exists. Else, create in the first RW folder. If no RW directory, return RO system
+
 func runServer(options []string,mountpoint string){
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
@@ -133,6 +166,7 @@ func runServer(options []string,mountpoint string){
 	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
+
 
 func panicOnErr(err error, desc ...interface{}) {
 	if err == nil {
@@ -170,8 +204,8 @@ mount_command:=exec.Command("sudo","mount", "-t", "nfs", "-oport=10000,mountport
 mount_command.Stdout = os.Stdout
 mount_command.Stderr = os.Stderr
 mount_command.Run()
-<-done
 
+<-done
 unmount_command:=exec.Command("sudo","umount", mountpoint)
 unmount_command.Stdout = os.Stdout
 unmount_command.Stderr = os.Stderr
