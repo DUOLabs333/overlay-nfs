@@ -1,21 +1,27 @@
 package main
-import (
+
+import(
+
 	billy "github.com/go-git/go-billy/v5"
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
-	
-	"strings"
-	"slices"
+
 	"flag"
-	"net"
-	"os/exec"
-	"os"
-	"log"
-	"time"
-	"path"
 	"fmt"
+	"log"
+	"net"
+	"os"
+	"os/exec"
 	"os/signal"
+	"path"
+	"path/filepath"
+	"slices"
 	"syscall"
+	"time"
+	"strconv"
+	"encoding/json"
+	"strings"
+
 )
 
 func runCommand(args... string){
@@ -25,10 +31,16 @@ func runCommand(args... string){
 	command.Run()
 }
 
+func newEmpty[T any]() T{
+	return *(new(T))
+}
+
 type OverlayFS struct {
 	paths []string
 	modes []string
 	mountpoint string
+	deletedMap map[string]bool
+	deletedMapFile string
 	
 	billy.Filesystem
 	
@@ -52,8 +64,20 @@ func NewFS(options []string, mountpoint string) (OverlayFS){
 	
 	result.paths=make([]string,0)
 	result.modes=make([]string,0)
-	
 	result.mountpoint=mountpoint
+	result.deletedMap=make(map[string]bool)
+	
+	mountpoint_Info,_:=os.Stat(mountpoint)
+	mountpoint_Stat,_:=mountpoint_Info.Sys().(*syscall.Stat_t)
+	result.deletedMapFile=path.Join(filepath.Dir(mountpoint),"overlay-nfs_"+strconv.FormatUint(mountpoint_Stat.Ino,10)+".json")
+	
+	_, err:= os.Stat(result.deletedMapFile)
+	if err==nil{
+		bytes, _ := os.ReadFile(result.deletedMapFile)
+		json.Unmarshal(bytes,&(result.deletedMap))
+	}
+		
+	
 	for _, value := range options{
 		split_index:=strings.LastIndex(value,"=")
 		if ((split_index==-1) || !slices.Contains([]string{"RO","RW"},value[split_index+1:])){
@@ -84,6 +108,33 @@ func (fs OverlayFS) findFirstExisting(Path string) string{
 		}
 	}
 	return possibleFiles[len(possibleFiles)-1]
+}
+
+func (fs OverlayFS) checkIfDeleted(filename string) bool{
+	dirs:=strings.Split(filename,string(os.PathSeparator))
+	for i, _ := range dirs{
+		partialFilename:=path.Join(dirs[:i]...)
+		_, exists := fs.deletedMap[partialFilename]
+		if exists{
+			return true
+		}
+	}
+	return false
+		
+}
+
+func (fs OverlayFS) writeToDeletedMapFile(){
+	bytes,_:=json.Marshal(fs.deletedMap)
+	os.WriteFile(fs.deletedMapFile,bytes,0644)
+}
+func (fs OverlayFS) addToDeleted(filename string){
+	fs.deletedMap[filename]=true
+	fs.writeToDeletedMapFile()
+}
+
+func (fs OverlayFS) removefromDeleted (filename string){
+	delete(fs.deletedMap,filename)
+	fs.writeToDeletedMapFile()
 }
 
 func (fs OverlayFS) Join(elem ...string) string{
@@ -155,6 +206,12 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	fmt.Println("Openfile:",original_filename)
 	
+	if fs.checkIfDeleted(original_filename){
+		if (flag & os.O_CREATE == 0){
+			return newEmpty[billy.File](), os.ErrNotExist
+		}
+	}
+			
 	possible_filename:=fs.findFirstExisting(original_filename)
 	_, err:=os.Stat(possible_filename)
 	if !os.IsNotExist(err){
@@ -186,13 +243,19 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	}
 	
 	if inRO{
-		fmt.Println("Testing")
 		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 		flag |= os.O_RDONLY
 	}
 		
 		
 	open,err:=os.OpenFile(filename,flag,perm)
+	
+	if (flag & os.O_CREATE == os.O_CREATE){
+		_,create_err:=os.Stat(filename)
+		if create_err==nil{
+			fs.removefromDeleted(original_filename)
+		}
+	}	
 	return &OverlayFile{open},err
 }
 
@@ -239,7 +302,6 @@ for {
 	}
 }
 
-runCommand("mkdir","
 runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl","-vvv","127.0.0.1:/", mountpoint)
 
 
