@@ -153,6 +153,11 @@ func (fs OverlayFS) Join(elem ...string) string{
 }
 
 func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
+	
+	if fs.checkIfDeleted(path){
+		return make([]os.FileInfo,0), os.ErrNotExist
+	}
+	
 	fmt.Println("Dir:",path)
 	
 	dirs:=fs.joinRelative(path)
@@ -180,6 +185,10 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 }
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
+	if fs.checkIfDeleted(filename){
+		return newEmpty[os.FileInfo](), os.ErrNotExist
+	}
+	
 	fmt.Println("Stat:",filename)
 	
 	
@@ -199,11 +208,20 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 }
 
 func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
+	
+	if fs.checkIfDeleted(filename){
+		return newEmpty[os.FileInfo](), os.ErrNotExist
+	}
+	
 	fmt.Println("Lstat:",filename)
 	return os.Lstat(fs.findFirstExisting(filename))
 }
 
 func (fs OverlayFS) Chtimes(name string, atime time.Time, mtime time.Time) error{
+	if fs.checkIfDeleted(name){
+		return os.ErrNotExist
+	}
+	
 	fmt.Println("Chtimes:",name)
 	return os.Chtimes(fs.findFirstExisting(name),atime,mtime)
 }
@@ -269,8 +287,29 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 }
 
 //If remove, remove if first file found is in RW. Regardless add to removed
-func Remove(filename string) error{
-	fmt.Println("Remove:",
+func (fs OverlayFS) Remove(filename string) error{
+	if fs.checkIfDeleted(filename){
+		return os.ErrNotExist
+	}
+	
+	fmt.Println("Remove:",filename)
+	
+	original_filename:=filename
+	
+	filename=fs.findFirstExisting(original_filename)
+	
+	var err error
+	if fs.getModeofFirstExisting(original_filename)=="RW"{
+		err=os.Remove(filename)
+	}else{
+		err=nil
+	}
+	
+	fs.addToDeleted(original_filename)
+	
+	return err
+}
+
 func runServer(options []string,mountpoint string){
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
