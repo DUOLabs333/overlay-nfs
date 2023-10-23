@@ -110,6 +110,16 @@ func (fs OverlayFS) findFirstExisting(Path string) string{
 	return possibleFiles[len(possibleFiles)-1]
 }
 
+func (fs OverlayFS) getModeofFirstExisting(filename string) string{
+	 overlayfs_filename:=fs.findFirstExisting(filename)
+	 for i,_:= range fs.paths{
+		 if path.Join(fs.paths[i],filename)==overlayfs_filename{
+			 return fs.modes[i]
+			 break
+		 }
+	 }
+	 return ""
+}
 func (fs OverlayFS) checkIfDeleted(filename string) bool{
 	dirs:=strings.Split(filename,string(os.PathSeparator))
 	for i, _ := range dirs{
@@ -171,8 +181,21 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	fmt.Println("Stat:",filename)
-	file, _:=os.Open(fs.findFirstExisting(filename))
-	return file.Stat()
+	
+	
+	overlayfs_filename:=fs.findFirstExisting(filename)
+	stat,err:=os.Lstat(overlayfs_filename)
+
+	if err!=nil{
+		return newEmpty[os.FileInfo](),err
+	}else{
+		if (stat.Mode() & os.ModeSymlink == os.ModeSymlink){
+			symlink, _ := os.Readlink(overlayfs_filename)
+			filename=symlink
+		}
+	}
+
+	return fs.Lstat(filename)
 }
 
 func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
@@ -195,19 +218,14 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 	return fs.OpenFile(filename,os.O_CREATE | os.O_TRUNC,0666)
 }
 
-/* If filename in deleted:
-If O_CREATE:
-	if file exists at the end, remove from deleted (not neccessarily delete folders/file, but change created time to 1)
-Else:
-	Return notexist
-*/
+
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
 	original_filename:=filename
 	
 	fmt.Println("Openfile:",original_filename)
 	
 	if fs.checkIfDeleted(original_filename){
-		if (flag & os.O_CREATE == 0){
+		if (flag & os.O_CREATE == 0){ //Create could create file, so can't say it's not neccessary
 			return newEmpty[billy.File](), os.ErrNotExist
 		}
 	}
@@ -221,7 +239,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			allRO:=true
 			for i,_ := range fs.paths{
 				fmt.Println(fs.modes[i])
-				if fs.modes[i]=="RW"{
+				if fs.modes[i]=="RW"{ //Create in the first RW directory
 					filename=path.Join(fs.paths[i],original_filename)
 					allRO=false
 					break
@@ -232,17 +250,8 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			}
 		}
 	}
-	inRO:=false
-	for i,_:= range fs.paths{
-		if path.Join(fs.paths[i],original_filename)==filename{
-			if fs.modes[i]=="RO"{
-				inRO=true
-			}
-			break
-		}
-	}
 	
-	if inRO{
+	if fs.getModeofFirstExisting(original_filename)=="RO"{
 		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 		flag |= os.O_RDONLY
 	}
@@ -252,14 +261,16 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	if (flag & os.O_CREATE == os.O_CREATE){
 		_,create_err:=os.Stat(filename)
-		if create_err==nil{
+		if create_err==nil{ //If Create was successful, it is no longer deleted
 			fs.removefromDeleted(original_filename)
 		}
 	}	
 	return &OverlayFile{open},err
 }
 
-
+//If remove, remove if first file found is in RW. Regardless add to removed
+func Remove(filename string) error{
+	fmt.Println("Remove:",
 func runServer(options []string,mountpoint string){
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
