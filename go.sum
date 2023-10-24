@@ -14,8 +14,13 @@ github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 h1:UVArwN/wkKjMVhh2EQ
 github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93/go.mod h1:Nfe4efndBz4TibWycNE+lqyJZiMX4ycx+QKV8Ta0f/o=
 github.com/willscott/go-nfs v0.0.0-20230907145631-41b369691e46 h1:9dp+1bZsWG82VUuGeMPIT5JWzWpenWF9eSe2/N/dbCA=
 github.com/willscott/go-nfs v0.0.0-20230907145631-41b369691e46/go.mod h1:1PiZswSlNu7GfHMWekF6rF1I94c8E0p+Cwbz7px1D14=
+github.com/willscott/go-nfs v0.0.0-20231024035845-2b12fc2f870f h1:3YkPdnvK+b6IENeV13N9DM0RLcRH3hm3iXc0tpRggAM=
+github.com/willscott/go-nfs v0.0.0-20231024035845-2b12fc2f870f/go.mod h1:K/Uur3LzI7N6nYSvwtniNvio1bNsNvIBz8v9TeU+R/k=
+github.com/willscott/go-nfs v0.0.0-20231024182844-ccc7143570a1 h1:lEJecePV+Qm+dk6XBNMsbiszpa02tsOQs6WvT2+AU5Y=
+github.com/willscott/go-nfs v0.0.0-20231024182844-ccc7143570a1/go.mod h1:K/Uur3LzI7N6nYSvwtniNvio1bNsNvIBz8v9TeU+R/k=
 github.com/willscott/go-nfs-client v0.0.0-20200605172546-271fa9065b33 h1:Wd8wdpRzPXskyHvZLyw7Wc1fp5oCE2mhBCj7bAiibUs=
 github.com/willscott/go-nfs-client v0.0.0-20200605172546-271fa9065b33/go.mod h1:cOUKSNty+RabZqKhm5yTJT5Vq/Fe83ZRWAJ5Kj8nRes=
 github.com/zema1/go-nfs-client v0.0.0-20200604081958-0cf942f0e0fe/go.mod h1:im3CVJ32XM3+E+2RhY0sa5IVJVQehUrX0oE1wX4xOwU=
+golang.org/x/sys v0.3.0 h1:w8ZOecv6NaNa/zC8944JTU3vz4u6Lagfk4RPQxv92NQ=
 golang.org/x/sys v0.3.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=

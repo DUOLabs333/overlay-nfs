@@ -122,8 +122,10 @@ func (fs OverlayFS) getModeofFirstExisting(filename string) string{
 }
 func (fs OverlayFS) checkIfDeleted(filename string) bool{
 	dirs:=strings.Split(filename,string(os.PathSeparator))
+	fmt.Println(dirs)
 	for i, _ := range dirs{
-		partialFilename:=path.Join(dirs[:i]...)
+		partialFilename:=path.Join(dirs[:i+1]...)
+		fmt.Println("Testing:",partialFilename)
 		_, exists := fs.deletedMap[partialFilename]
 		if exists{
 			return true
