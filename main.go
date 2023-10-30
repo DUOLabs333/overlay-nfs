@@ -122,12 +122,12 @@ func (fs OverlayFS) getModeofFirstExisting(filename string) string{
 }
 func (fs OverlayFS) checkIfDeleted(filename string) bool{
 	dirs:=strings.Split(filename,string(os.PathSeparator))
-	fmt.Println(dirs)
+
 	for i, _ := range dirs{
 		partialFilename:=path.Join(dirs[:i+1]...)
-		fmt.Println("Testing:",partialFilename)
 		_, exists := fs.deletedMap[partialFilename]
 		if exists{
+			fmt.Println("Deleted:",partialFilename)
 			return true
 		}
 	}
@@ -160,7 +160,7 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 		return make([]os.FileInfo,0), os.ErrNotExist
 	}
 	
-	fmt.Println("Dir:",path)
+	fmt.Println("ReadDir:",path)
 	
 	dirs:=fs.joinRelative(path)
 	dirMap:=make(map[string]os.FileInfo)
@@ -195,17 +195,18 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	
 	
 	overlayfs_filename:=fs.findFirstExisting(filename)
-	stat,err:=os.Lstat(overlayfs_filename)
-
-	if err!=nil{
-		return newEmpty[os.FileInfo](),err
-	}else{
-		if (stat.Mode() & os.ModeSymlink == os.ModeSymlink){
-			symlink, _ := os.Readlink(overlayfs_filename)
-			filename=symlink
+	
+	symlink, err:=fs.Readlink(overlayfs_filename)
+	
+	if err==nil{
+		if !filepath.IsAbs(symlink){
+			symlink=path.Join(filepath.Dir(filename),symlink)
 		}
+		filename=symlink
+	}else{
+		filename=filename
 	}
-
+	
 	return fs.Lstat(filename)
 }
 
@@ -219,6 +220,16 @@ func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 	return os.Lstat(fs.findFirstExisting(filename))
 }
 
+func (fs OverlayFS) Readlink(link string) (string, error){
+	 if fs.checkIfDeleted(link){
+		 return "",os.ErrNotExist
+	 }
+	 
+	 fmt.Println("Readlink:",link)
+	 
+	 return os.Readlink(fs.findFirstExisting(link))
+}
+	 
 func (fs OverlayFS) Chtimes(name string, atime time.Time, mtime time.Time) error{
 	if fs.checkIfDeleted(name){
 		return os.ErrNotExist
@@ -284,7 +295,8 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		if create_err==nil{ //If Create was successful, it is no longer deleted
 			fs.removefromDeleted(original_filename)
 		}
-	}	
+	}
+	
 	return &OverlayFile{open},err
 }
 
