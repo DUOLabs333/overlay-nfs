@@ -192,8 +192,7 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	}
 	
 	fmt.Println("Stat:",filename)
-	
-	
+	/*
 	overlayfs_filename:=fs.findFirstExisting(filename)
 	
 	symlink, err:=fs.Readlink(overlayfs_filename)
@@ -206,7 +205,7 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	}else{
 		filename=filename
 	}
-	
+	*/
 	return fs.Lstat(filename)
 }
 
@@ -217,6 +216,7 @@ func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 	}
 	
 	fmt.Println("Lstat:",filename)
+
 	return os.Lstat(fs.findFirstExisting(filename))
 }
 
