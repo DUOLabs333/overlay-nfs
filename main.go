@@ -168,13 +168,19 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	
 	//If there's A/C and B/C, take A/C
 	for _, dir :=range dirs{
-		dirEntries,_:=os.ReadDir(dir)
+		dirEntries,err:=os.ReadDir(dir)
+		if err!=nil{
+			continue
+		}
 		for _, entry:= range dirEntries{
 			_,ok:=dirMap[entry.Name()]
 			if ok{
 				continue
 			}else{
-				info, _:=entry.Info()
+				info, err:=entry.Info()
+				if err!=nil{
+					continue
+				}
 				dirMap[entry.Name()]=info
 			}
 		}
@@ -183,6 +189,8 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	for _,info := range dirMap{
 		result=append(result,info)
 	}
+	
+	fmt.Println(result)
 	return result,nil
 }
 
@@ -210,7 +218,6 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 }
 
 func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
-	
 	if fs.checkIfDeleted(filename){
 		return newEmpty[os.FileInfo](), os.ErrNotExist
 	}
@@ -329,7 +336,7 @@ func runServer(options []string,mountpoint string){
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
-	cacheHelper := nfshelper.NewCachingHandler(handler, 1024)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 100000)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
 
@@ -372,6 +379,6 @@ runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp
 <-done
 
 //wait until SIGTERM or SIGINT, then unmount
-runCommand("sudo","umount", mountpoint)
+runCommand("sudo","umount", "-l",mountpoint)
 fmt.Println()
 }
