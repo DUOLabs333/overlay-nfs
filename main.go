@@ -21,6 +21,7 @@ import(
 	"strconv"
 	"encoding/json"
 	"strings"
+	"golang.org/x/sys/unix"
 
 )
 
@@ -110,6 +111,15 @@ func (fs OverlayFS) findFirstExisting(Path string) string{
 	return possibleFiles[len(possibleFiles)-1]
 }
 
+func (fs OverlayFS) findFirstRW(filename string) string{
+	for i,_ := range fs.paths{
+		fmt.Println(fs.modes[i])
+		if fs.modes[i]=="RW"{ //Create in the first RW directory
+			return path.Join(fs.paths[i],filename)
+		}
+	}
+	return ""
+}
 func (fs OverlayFS) getModeofFirstExisting(filename string) string{
 	 overlayfs_filename:=fs.findFirstExisting(filename)
 	 for i,_:= range fs.paths{
@@ -331,12 +341,69 @@ func (fs OverlayFS) Remove(filename string) error{
 	return err
 }
 
+func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) error {
+	if fs.checkIfDeleted(path){
+		return os.ErrNotExist
+	}
+	
+	filename:=fs.findFirstRW(path)
+	if filename==""{
+		return os.ErrPermission
+	}
+	
+	dev := unix.Mkdev(major, minor)
+	return unix.Mknod(filename, mode, int(dev))
+}
+
+func (fs OverlayFS) Mkfifo(path string, mode uint32) error {
+	if fs.checkIfDeleted(path){
+		return os.ErrNotExist
+	}
+	
+	filename:=fs.findFirstRW(path)
+	if filename==""{
+		return os.ErrPermission
+	}
+	
+	return unix.Mkfifo(filename, mode)
+}
+
+func (fs OverlayFS) Link(link string, path string) error {
+	if fs.checkIfDeleted(path){
+		return os.ErrNotExist
+	}
+	
+	filename:=fs.findFirstRW(path)
+	if filename==""{
+		return os.ErrPermission
+	}
+	
+	return unix.Link(fs.findFirstExisting(link), filename)
+}
+
+func (fs OverlayFS) Socket(path string) error {
+	if fs.checkIfDeleted(path){
+		return os.ErrNotExist
+	}
+	
+	filename:=fs.findFirstRW(path)
+	if filename==""{
+		return os.ErrPermission
+	}
+	
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return err
+	}
+	return unix.Bind(fd, &unix.SockaddrUnix{Name: filename})
+}
+
 func runServer(options []string,mountpoint string){
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
-	cacheHelper := nfshelper.NewCachingHandler(handler, 100000)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 10000000)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
 
