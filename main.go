@@ -22,6 +22,7 @@ import(
 	"encoding/json"
 	"strings"
 	"golang.org/x/sys/unix"
+	"errors"
 
 )
 
@@ -113,7 +114,6 @@ func (fs OverlayFS) findFirstExisting(Path string) string{
 
 func (fs OverlayFS) findFirstRW(filename string) string{
 	for i,_ := range fs.paths{
-		fmt.Println(fs.modes[i])
 		if fs.modes[i]=="RW"{ //Create in the first RW directory
 			return path.Join(fs.paths[i],filename)
 		}
@@ -175,16 +175,19 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	dirs:=fs.joinRelative(path)
 	dirMap:=make(map[string]os.FileInfo)
 	result:=make([]os.FileInfo,0)
+	existsOneDir:=false //Whether at least one dir in dirs is a directory
 	
-	//If there's A/C and B/C, take A/C
+	
 	for _, dir :=range dirs{
 		dirEntries,err:=os.ReadDir(dir)
 		if err!=nil{
 			continue
+		}else{
+			existsOneDir=true
 		}
 		for _, entry:= range dirEntries{
 			_,ok:=dirMap[entry.Name()]
-			if ok{
+			if ok{ //If there's A/C and B/C, take A/C
 				continue
 			}else{
 				info, err:=entry.Info()
@@ -200,8 +203,12 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 		result=append(result,info)
 	}
 	
-	fmt.Println(result)
-	return result,nil
+	err:=errors.New("H")
+	err=nil
+	if !existsOneDir{
+		err=os.ErrInvalid
+	}
+	return result,err
 }
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
@@ -403,7 +410,7 @@ func runServer(options []string,mountpoint string){
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
-	cacheHelper := nfshelper.NewCachingHandler(handler, 10000000)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 100000000000)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
 
@@ -440,7 +447,7 @@ for {
 	}
 }
 
-runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl","-vvv","127.0.0.1:/", mountpoint)
+runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl,nolock","-vvv","127.0.0.1:/", mountpoint)
 
 
 <-done
