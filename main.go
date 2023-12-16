@@ -306,7 +306,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 	}
 	
-	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there, then open that file (only when RDWR or WRONLY). Otherwise, continue as normal
+	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there, then open that file (only when RDWR or WRONLY). Otherwise, continue as normal. Check that file is regular, otherwise continue as expected
 		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 		flag |= os.O_RDONLY
 	}

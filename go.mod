@@ -2,11 +2,9 @@ module overlay-nfs
 
 go 1.21.2
 
-replace github.com/willscott/go-nfs => /home/system/Downloads/go-nfs
-
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
-	github.com/willscott/go-nfs v0.0.2-0.20231214070857-cbe1190f5096
+	github.com/willscott/go-nfs v0.0.2-0.20231216210521-c4b888eab55f
 	golang.org/x/sys v0.15.0
 )
 
