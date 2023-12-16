@@ -306,7 +306,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 	}
 	
-	if fs.getModeofFirstExisting(original_filename)=="RO"{
+	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there, then open that file (only when RDWR or WRONLY). Otherwise, continue as normal
 		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 		flag |= os.O_RDONLY
 	}
@@ -406,6 +406,7 @@ func (fs OverlayFS) Socket(path string) error {
 }
 
 func runServer(options []string,mountpoint string){
+	//Try different ports randomly, until you can connect to 1; then send that port through a channel. This also means we can get rid of the net.DialTimeout check for connectivity
 	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
@@ -449,10 +450,8 @@ for {
 
 runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl,nolock","-vvv","127.0.0.1:/", mountpoint)
 
+<-done //wait until SIGTERM or SIGINT, then unmount
 
-<-done
-
-//wait until SIGTERM or SIGINT, then unmount
 runCommand("sudo","umount", "-l",mountpoint)
 fmt.Println()
 }
