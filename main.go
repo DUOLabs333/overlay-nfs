@@ -270,7 +270,7 @@ func (fs OverlayFS) Open(filename string) (billy.File, error){
 
 func (fs OverlayFS) Create(filename string) (billy.File, error){
 	fmt.Println("Create:",filename)
-	return fs.OpenFile(filename,os.O_CREATE | os.O_TRUNC,0666)
+	return fs.OpenFile(filename,os.O_CREATE | os.O_TRUNC, 0666)
 }
 
 
@@ -287,7 +287,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			
 	possible_filename:=fs.findFirstExisting(original_filename)
 	_, err:=os.Stat(possible_filename)
-	if !os.IsNotExist(err){
+	if !os.IsNotExist(err){ //If file exists, use it
 		filename=possible_filename
 	}else{
 		if (flag & os.O_CREATE == os.O_CREATE){
@@ -306,7 +306,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 	}
 	
-	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there, then open that file (only when RDWR or WRONLY). Otherwise, continue as normal. Check that file is regular, otherwise continue as expected
+	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there (and create parent directories as needed with MkdirAll and with the same permission with Mode().Perm()), then open that file (only when RDWR or WRONLY). Otherwise, continue as normal. Check that file is regular (with Mode().IsRegular()), otherwise continue as expected
 		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 		flag |= os.O_RDONLY
 	}
@@ -324,7 +324,6 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	return &OverlayFile{open},err
 }
 
-//If remove, remove if first file found is in RW. Regardless add to removed
 func (fs OverlayFS) Remove(filename string) error{
 	if fs.checkIfDeleted(filename){
 		return os.ErrNotExist
@@ -405,9 +404,16 @@ func (fs OverlayFS) Socket(path string) error {
 	return unix.Bind(fd, &unix.SockaddrUnix{Name: filename})
 }
 
+var port chan int = make(chan int,1)
+
 func runServer(options []string,mountpoint string){
-	//Try different ports randomly, until you can connect to 1; then send that port through a channel. This also means we can get rid of the net.DialTimeout check for connectivity
-	listener, err := net.Listen("tcp", ":10000") //Later, use port that's defined in main as argument to function
+	listener, err := net.Listen("tcp", ":0") //Get random unused port
+	
+	listenerAddr:=listener.Addr()
+	addr,_:=net.ResolveTCPAddr(listenerAddr.Network(),listenerAddr.String())
+	
+	port <- addr.Port
+	
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
@@ -428,6 +434,7 @@ func main(){
 sigs := make(chan os.Signal, 1)
 signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 done := make(chan bool, 1)
+
 go func() {
 	<-sigs
 	done <- true
@@ -438,17 +445,10 @@ args:=flag.Args()
 
 options:=args[:len(args)-1]
 mountpoint:=args[len(args)-1]
-go runServer(options,mountpoint);
+go runServer(options,mountpoint)
 
-for {
-	conn, _ := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", "10000"), 1*time.Millisecond)
-	if conn != nil {
-		conn.Close()
-		break
-	}
-}
-
-runCommand("sudo","mount", "-t", "nfs", "-oport=10000,mountport=10000,vers=3,tcp,noacl,nolock","-vvv","127.0.0.1:/", mountpoint)
+serverPort:= <- port
+runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock",serverPort),"-vvv","127.0.0.1:/", mountpoint)
 
 <-done //wait until SIGTERM or SIGINT, then unmount
 
