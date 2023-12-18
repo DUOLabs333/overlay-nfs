@@ -328,13 +328,14 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		originalDir:=""
 		
 		for i,dir := range fs.paths{
-			if fs.modes[i]!="RW"{
-				continue
-			}
 			
 			if fs.Join(dir,original_filename)==filename{ //Stop when you reach the current RO directory
 				originalDir=dir
 				break
+			}
+			
+			if fs.modes[i]!="RW"{
+				continue
 			}
 			
 			if fs.modes[i]=="RW"{ //Get the highest available RW directory that's above the current RO directory and COW there (the highest available is just a choice --- we could have also chosen the RW directory that is closest to the current RO directory that is still higher than it)
@@ -523,7 +524,7 @@ mountpoint:=args[len(args)-1]
 go runServer(options,mountpoint)
 
 serverPort:= <- port
-runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock",serverPort),"-vvv","127.0.0.1:/", mountpoint)
+runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft",serverPort),"-vvv","127.0.0.1:/", mountpoint)
 
 <-done //wait until SIGTERM or SIGINT, then unmount
 
