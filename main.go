@@ -23,6 +23,7 @@ import(
 	"strings"
 	"golang.org/x/sys/unix"
 	"errors"
+	"io"
 
 )
 
@@ -273,6 +274,20 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 	return fs.OpenFile(filename,os.O_CREATE | os.O_TRUNC, 0666)
 }
 
+func setPermissions(src, dest string) {
+	srcStat,_:=os.Stat(src)
+	os.Chmod(dest,srcStat.Mode())
+	
+	srcUid:=-1
+	srcGid:=-1
+	
+	if srcInfo, ok := srcStat.Sys().(*syscall.Stat_t); ok{
+		srcUid=int(srcInfo.Uid)
+		srcGid=int(srcInfo.Gid)
+	}
+	
+	os.Chown(dest,srcUid,srcGid)
+}
 
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
 	original_filename:=filename
@@ -306,9 +321,69 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 	}
 	
-	if fs.getModeofFirstExisting(original_filename)=="RO"{ //Implement COW --- if there's a RW above it (get the highest available -- the first one in the list), copy the file there (and create parent directories as needed with MkdirAll and with the same permission with Mode().Perm()), then open that file (only when RDWR or WRONLY). Otherwise, continue as normal. Check that file is regular (with Mode().IsRegular()), otherwise continue as expected
-		flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
-		flag |= os.O_RDONLY
+	if fs.getModeofFirstExisting(original_filename)=="RO" && ((flag & os.O_RDWR==os.O_RDWR) || (flag & os.O_WRONLY==os.O_WRONLY)){ //Implement COW only when RDWR or WRONLY.
+	
+		COW:=false
+		COWDir:=""
+		originalDir:=""
+		
+		for i,dir := range fs.paths{
+			if fs.modes[i]!="RW"{
+				continue
+			}
+			
+			if fs.Join(dir,original_filename)==filename{ //Stop when you reach the current RO directory
+				originalDir=dir
+				break
+			}
+			
+			if fs.modes[i]=="RW"{ //Get the highest available RW directory that's above the current RO directory and COW there (the highest available is just a choice --- we could have also chosen the RW directory that is closest to the current RO directory that is still higher than it)
+				if COW==false{
+					COWDir=dir
+					COW=true
+				}
+			}		
+		}
+		
+		fileStat,_:=os.Stat(filename)
+		if COW {
+			COW=fileStat.Mode().IsRegular() //Check that file is regular
+		}
+		
+		if COW {
+			parent_dirs:=make([]string,0)
+			curr:=filepath.Dir(original_filename)
+			
+			for true{
+				if curr=="."{
+					break
+				}
+				
+				parent_dirs=append(parent_dirs,curr)
+				curr=filepath.Dir(curr)
+			}
+			
+			slices.Reverse(parent_dirs)
+			
+			for _,dir := range parent_dirs{ //Create parent directories of file in COW directories
+				newDir:=fs.Join(COWDir,dir)
+				os.Mkdir(newDir,0700)
+				setPermissions(fs.Join(originalDir,dir),newDir)
+			}
+			
+			src,_:=os.Open(filename)
+			
+			newFilename:=fs.Join(COWDir,original_filename)
+			dest,_:=os.Create(newFilename)
+			
+			io.Copy(dest,src)
+			setPermissions(filename, newFilename) //Make file with the same permissions as before
+			
+			filename=newFilename
+		}else{
+			flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
+			flag |= os.O_RDONLY
+		}
 	}
 		
 		
