@@ -11,154 +11,18 @@ import(
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"slices"
 	"syscall"
 	"time"
-	"strconv"
-	"encoding/json"
-	"strings"
 	"golang.org/x/sys/unix"
 	"errors"
 	"io"
+	fs1 "io/fs"
 
 )
 
-func runCommand(args... string){
-	command:=exec.Command(args[0],args[1:]...)
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	command.Run()
-}
-
-func newEmpty[T any]() T{
-	return *(new(T))
-}
-
-type OverlayFS struct {
-	paths []string
-	modes []string
-	mountpoint string
-	deletedMap map[string]bool
-	deletedMapFile string
-	
-	billy.Filesystem
-	
-	billy.Change
-}
-
-type OverlayFile struct{
-	*os.File
-}
-
-func (*OverlayFile) Unlock() error{
-	return nil
-}
-
-func (*OverlayFile) Lock() error{
-	return nil
-}
-
-func NewFS(options []string, mountpoint string) (OverlayFS){
-	result:=OverlayFS{}
-	
-	result.paths=make([]string,0)
-	result.modes=make([]string,0)
-	result.mountpoint=mountpoint
-	result.deletedMap=make(map[string]bool)
-	
-	mountpoint_Info,_:=os.Stat(mountpoint)
-	mountpoint_Stat,_:=mountpoint_Info.Sys().(*syscall.Stat_t)
-	result.deletedMapFile=path.Join(filepath.Dir(mountpoint),"overlay-nfs_"+strconv.FormatUint(mountpoint_Stat.Ino,10)+".json")
-	
-	_, err:= os.Stat(result.deletedMapFile)
-	if err==nil{
-		bytes, _ := os.ReadFile(result.deletedMapFile)
-		json.Unmarshal(bytes,&(result.deletedMap))
-	}
-		
-	
-	for _, value := range options{
-		split_index:=strings.LastIndex(value,"=")
-		if ((split_index==-1) || !slices.Contains([]string{"RO","RW"},value[split_index+1:])){
-			value+="=RO"
-			split_index=strings.LastIndex(value,"=")
-		}
-		result.paths=append(result.paths,value[:split_index])
-		result.modes=append(result.modes,value[split_index+1:])
-	}
-	
-	return result
-}
-
-func (fs OverlayFS) joinRelative(Path string) ([]string){
-	result:=make([]string,0,len(fs.paths))
-	for i, _ := range fs.paths{
-		result=append(result,path.Join(fs.paths[i],Path))
-	}
-	return result
-}
-
-func (fs OverlayFS) findFirstExisting(Path string) string{
-	possibleFiles:=fs.joinRelative(Path)
-	for _, file := range possibleFiles{
-		_,err:=os.Stat(file);
-		if err==nil{
-			return file
-		}
-	}
-	return possibleFiles[len(possibleFiles)-1]
-}
-
-func (fs OverlayFS) findFirstRW(filename string) string{
-	for i,_ := range fs.paths{
-		if fs.modes[i]=="RW"{ //Create in the first RW directory
-			return path.Join(fs.paths[i],filename)
-		}
-	}
-	return ""
-}
-func (fs OverlayFS) getModeofFirstExisting(filename string) string{
-	 overlayfs_filename:=fs.findFirstExisting(filename)
-	 for i,_:= range fs.paths{
-		 if path.Join(fs.paths[i],filename)==overlayfs_filename{
-			 return fs.modes[i]
-			 break
-		 }
-	 }
-	 return ""
-}
-func (fs OverlayFS) checkIfDeleted(filename string) bool{
-	dirs:=strings.Split(filename,string(os.PathSeparator))
-
-	for i, _ := range dirs{
-		partialFilename:=path.Join(dirs[:i+1]...)
-		_, exists := fs.deletedMap[partialFilename]
-		if exists{
-			fmt.Println("Deleted:",partialFilename)
-			return true
-		}
-	}
-	return false
-		
-}
-
-func (fs OverlayFS) writeToDeletedMapFile(){
-	bytes,_:=json.Marshal(fs.deletedMap)
-	os.WriteFile(fs.deletedMapFile,bytes,0644)
-}
-func (fs OverlayFS) addToDeleted(filename string){
-	fs.deletedMap[filename]=true
-	fs.writeToDeletedMapFile()
-}
-
-func (fs OverlayFS) removefromDeleted (filename string){
-	delete(fs.deletedMap,filename)
-	fs.writeToDeletedMapFile()
-}
 
 func (fs OverlayFS) Join(elem ...string) string{
 	fmt.Println("Join:",elem)
@@ -218,6 +82,8 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	}
 	
 	fmt.Println("Stat:",filename)
+	
+	//NFS makes no distinction between Lstat and Stat so the following code had to be commented out.
 	/*
 	overlayfs_filename:=fs.findFirstExisting(filename)
 	
@@ -274,124 +140,90 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 	return fs.OpenFile(filename,os.O_CREATE | os.O_TRUNC, 0666)
 }
 
-func setPermissions(src, dest string) {
-	srcStat,_:=os.Stat(src)
-	os.Chmod(dest,srcStat.Mode())
-	
-	srcUid:=-1
-	srcGid:=-1
-	
-	if srcInfo, ok := srcStat.Sys().(*syscall.Stat_t); ok{
-		srcUid=int(srcInfo.Uid)
-		srcGid=int(srcInfo.Gid)
-	}
-	
-	os.Chown(dest,srcUid,srcGid)
-}
-
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
 	original_filename:=filename
 	
 	fmt.Println("Openfile:",original_filename)
 	
-	if fs.checkIfDeleted(original_filename){
-		if (flag & os.O_CREATE == 0){ //Create could create file, so can't say it's not neccessary
+	if fs.checkIfDeleted(original_filename){ //If file has been explicitly deleted, any call to Open will fail...
+		if (flag & os.O_CREATE == 0){ //...except for CREATE
 			return newEmpty[billy.File](), os.ErrNotExist
 		}
 	}
-			
-	possible_filename:=fs.findFirstExisting(original_filename)
-	_, err:=os.Stat(possible_filename)
-	if !os.IsNotExist(err){ //If file exists, use it
-		filename=possible_filename
-	}else{
-		if (flag & os.O_CREATE == os.O_CREATE){
-			allRO:=true
-			for i,_ := range fs.paths{
-				fmt.Println(fs.modes[i])
-				if fs.modes[i]=="RW"{ //Create in the first RW directory
-					filename=path.Join(fs.paths[i],original_filename)
-					allRO=false
-					break
-				}
-			}
-			if allRO{
-				return *new(billy.File), os.ErrPermission
-			}
+	
+	filename=fs.findFirstExisting(filename)
+
+	if (flag & os.O_CREATE !=0){
+		create_path, err:=fs.createPath(original_filename)
+		if err!=nil{
+			return newEmpty[billy.File](), err
 		}
-	}
-	
-	if fs.getModeofFirstExisting(original_filename)=="RO" && ((flag & os.O_RDWR==os.O_RDWR) || (flag & os.O_WRONLY==os.O_WRONLY)){ //Implement COW only when RDWR or WRONLY.
-	
-		COW:=false
-		COWDir:=""
-		originalDir:=""
 		
-		for i,dir := range fs.paths{
-			
-			if fs.Join(dir,original_filename)==filename{ //Stop when you reach the current RO directory
-				originalDir=dir
-				break
-			}
-			
-			if fs.modes[i]!="RW"{
-				continue
-			}
-			
-			if fs.modes[i]=="RW"{ //Get the highest available RW directory that's above the current RO directory and COW there (the highest available is just a choice --- we could have also chosen the RW directory that is closest to the current RO directory that is still higher than it)
-				if COW==false{
-					COWDir=dir
-					COW=true
-				}
-			}		
+		filename=create_path
+	}else{
+	if fs.getModeofFirstExisting(original_filename)=="RO"{ //COW only matters in RO directories
+	
+	if ((flag & os.O_RDWR !=0) || (flag & os.O_WRONLY !=0)){ //Implement COW only when RDWR or WRONLY.
+	
+		fs.deletedMap[original_filename]=true //Done to force createPath to create file above the current existing one
+		COW:=false
+		COWPath:=""
+		
+		create_path, err:= fs.createPath(original_filename)
+		
+		delete(fs.deletedMap,original_filename)
+				
+		if err==nil{
+			COW=true
+			COWPath=create_path
 		}
 		
 		fileStat,_:=os.Stat(filename)
+		fileMode:=fileStat.Mode()
+		isRegular := fileMode.IsRegular() 
+		isSymlink := (fileMode & fs1.ModeSymlink != 0)
+		
 		if COW {
-			COW=fileStat.Mode().IsRegular() //Check that file is regular
+			COW=isRegular || isSymlink //Check that file is regular or is a symlink
 		}
 		
 		if COW {
-			parent_dirs:=make([]string,0)
-			curr:=filepath.Dir(original_filename)
+			parent_dirs:=parentDirs(original_filename)
+			COWParentDirs:=parentDirs(COWPath)
 			
-			for true{
-				if curr=="."{
-					break
-				}
-				
-				parent_dirs=append(parent_dirs,curr)
-				curr=filepath.Dir(curr)
-			}
+			slices.Reverse(parent_dirs) //From innermost to outermost
+			slices.Reverse(COWParentDirs)
 			
-			slices.Reverse(parent_dirs)
-			
-			for _,dir := range parent_dirs{ //Create parent directories of file in COW directories
-				newDir:=fs.Join(COWDir,dir)
-				os.Mkdir(newDir,0700)
-				setPermissions(fs.Join(originalDir,dir),newDir)
+			for i,_ := range parent_dirs{ //Create parent directories of file in COW directories
+				os.Mkdir(COWParentDirs[i],0700)
+				setPermissions(parent_dirs[i],COWParentDirs[i])
 			}
 			
 			src,_:=os.Open(filename)
 			
-			newFilename:=fs.Join(COWDir,original_filename)
-			dest,_:=os.Create(newFilename)
+			if isRegular{
+				dest,_:=os.Create(COWPath)
 			
-			io.Copy(dest,src)
-			setPermissions(filename, newFilename) //Make file with the same permissions as before
+				io.Copy(dest,src)
+			}else if isSymlink{
+				target,_ :=os.Readlink(filename)
+				os.Symlink(target,COWPath)
+			}
 			
-			filename=newFilename
+			setPermissions(filename, COWPath) //Make file with the same permissions as before
+			
+			filename=COWPath
 		}else{
 			flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
 			flag |= os.O_RDONLY
 		}
 	}
-		
-		
+	}	
+	}
 	open,err:=os.OpenFile(filename,flag,perm)
 	
-	if (flag & os.O_CREATE == os.O_CREATE){
-		_,create_err:=os.Stat(filename)
+	if (flag & os.O_CREATE != 0){
+		_,create_err:=os.Lstat(filename)
 		if create_err==nil{ //If Create was successful, it is no longer deleted
 			fs.removefromDeleted(original_filename)
 		}
@@ -423,54 +255,55 @@ func (fs OverlayFS) Remove(filename string) error{
 	return err
 }
 
-func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) error {
-	if fs.checkIfDeleted(path){
-		return os.ErrNotExist
+//The "Create" functions
+
+func (fs OverlayFS) createErrorCheck(path string) {
+	_,err:=os.Lstat(fs.findFirstExisting(path))
+	if err==nil{
+		fs.removefromDeleted(path)
 	}
+}
+func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) error {
+	defer fs.createErrorCheck(path)
 	
-	filename:=fs.findFirstRW(path)
-	if filename==""{
-		return os.ErrPermission
+	filename,err:=fs.createPath(path)
+	if err!=nil{
+		return err
 	}
 	
 	dev := unix.Mkdev(major, minor)
 	return unix.Mknod(filename, mode, int(dev))
+		
 }
 
 func (fs OverlayFS) Mkfifo(path string, mode uint32) error {
-	if fs.checkIfDeleted(path){
-		return os.ErrNotExist
-	}
+	defer fs.createErrorCheck(path)
 	
-	filename:=fs.findFirstRW(path)
-	if filename==""{
-		return os.ErrPermission
+	filename,err:=fs.createPath(path)
+	if err!=nil{
+		return err
 	}
 	
 	return unix.Mkfifo(filename, mode)
 }
 
 func (fs OverlayFS) Link(link string, path string) error {
-	if fs.checkIfDeleted(path){
-		return os.ErrNotExist
+	defer fs.createErrorCheck(path)
+	
+	filename,err:=fs.createPath(path)
+	if err!=nil{
+		return err
 	}
 	
-	filename:=fs.findFirstRW(path)
-	if filename==""{
-		return os.ErrPermission
-	}
-	
-	return unix.Link(fs.findFirstExisting(link), filename)
+	return unix.Link(link, filename)
 }
 
 func (fs OverlayFS) Socket(path string) error {
-	if fs.checkIfDeleted(path){
-		return os.ErrNotExist
-	}
+	defer fs.createErrorCheck(path)
 	
-	filename:=fs.findFirstRW(path)
-	if filename==""{
-		return os.ErrPermission
+	filename,err:=fs.createPath(path)
+	if err!=nil{
+		return err
 	}
 	
 	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
@@ -506,6 +339,10 @@ func panicOnErr(err error, desc ...interface{}) {
 	log.Panicln(err)
 }
 
+func umount (mountpoint string) {
+	runCommand("sudo","umount", "-l",mountpoint)
+}
+
 func main(){
 sigs := make(chan os.Signal, 1)
 signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -521,13 +358,14 @@ args:=flag.Args()
 
 options:=args[:len(args)-1]
 mountpoint:=args[len(args)-1]
+
+umount(mountpoint)
+defer func (){umount(mountpoint); fmt.Println()}() //Unmount, even when panicking
+
 go runServer(options,mountpoint)
 
 serverPort:= <- port
 runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft",serverPort),"-vvv","127.0.0.1:/", mountpoint)
 
-<-done //wait until SIGTERM or SIGINT, then unmount
-
-runCommand("sudo","umount", "-l",mountpoint)
-fmt.Println()
+<-done //wait until SIGTERM or SIGINT
 }
