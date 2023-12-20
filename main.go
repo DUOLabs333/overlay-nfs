@@ -15,7 +15,6 @@ import(
 	"path"
 	"syscall"
 	"time"
-	"golang.org/x/sys/unix"
 	"errors"
 	"io"
 	"slices"
@@ -231,10 +230,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	open,err:=os.OpenFile(filename,flag,perm)
 	
 	if (flag & os.O_CREATE != 0){
-		_,create_err:=os.Lstat(filename)
-		if create_err==nil{ //If Create was successful, it is no longer deleted
-			fs.removefromDeleted(original_filename)
-		}
+		defer fs.createErrorCheck(original_filename)
 	}
 	
 	return &OverlayFile{open},err
@@ -261,64 +257,6 @@ func (fs OverlayFS) Remove(filename string) error{
 	fs.addToDeleted(original_filename)
 	
 	return err
-}
-
-//The "Create" functions
-
-func (fs OverlayFS) createErrorCheck(path string) {
-	_,err:=os.Lstat(fs.findFirstExisting(path))
-	if err==nil{
-		fs.removefromDeleted(path)
-	}
-}
-func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) error {
-	defer fs.createErrorCheck(path)
-	
-	filename,err:=fs.createPath(path)
-	if err!=nil{
-		return err
-	}
-	
-	dev := unix.Mkdev(major, minor)
-	return unix.Mknod(filename, mode, int(dev))
-		
-}
-
-func (fs OverlayFS) Mkfifo(path string, mode uint32) error {
-	defer fs.createErrorCheck(path)
-	
-	filename,err:=fs.createPath(path)
-	if err!=nil{
-		return err
-	}
-	
-	return unix.Mkfifo(filename, mode)
-}
-
-func (fs OverlayFS) Link(link string, path string) error {
-	defer fs.createErrorCheck(path)
-	
-	filename,err:=fs.createPath(path)
-	if err!=nil{
-		return err
-	}
-	
-	return unix.Link(link, filename)
-}
-
-func (fs OverlayFS) Socket(path string) error {
-	defer fs.createErrorCheck(path)
-	
-	filename,err:=fs.createPath(path)
-	if err!=nil{
-		return err
-	}
-	
-	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
-	if err != nil {
-		return err
-	}
-	return unix.Bind(fd, &unix.SockaddrUnix{Name: filename})
 }
 
 var port chan int = make(chan int,1)

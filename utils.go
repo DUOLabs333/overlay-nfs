@@ -248,28 +248,27 @@ func (fs OverlayFS) joinRelative(Path string) ([]string){
 	return result
 }
 
-func (fs OverlayFS) findFirstExisting(Path string) string{
-	possibleFiles:=fs.joinRelative(Path)
-	for _, file := range possibleFiles{
-		_,err:=os.Stat(file);
+func (fs OverlayFS) indexOfFirstExisting(filename string) int{
+	possibleFiles:=fs.joinRelative(filename)
+	for i, file := range possibleFiles{
+		_,err:=os.Stat(file)
 		if err==nil{
-			return file
+			return i
 		}
 	}
-	return possibleFiles[len(possibleFiles)-1]
+	return len(possibleFiles)-1
+}
+
+func (fs OverlayFS) findFirstExisting(filename string) string{
+	possibleFiles:=fs.joinRelative(filename)
+	return possibleFiles[fs.indexOfFirstExisting(filename)]
 }
 
 
 func (fs OverlayFS) getModeofFirstExisting(filename string) string{
-	 overlayfs_filename:=fs.findFirstExisting(filename)
-	 for i,_:= range fs.paths{
-		 if path.Join(fs.paths[i],filename)==overlayfs_filename{
-			 return fs.modes[i]
-			 break
-		 }
-	 }
-	 return ""
+	 return fs.modes[fs.indexOfFirstExisting(filename)]
 }
+
 func (fs OverlayFS) checkIfDeleted(filename string) bool{
 	paths:=parentDirs(filename)
 	
@@ -296,6 +295,12 @@ func (fs OverlayFS) addToDeleted(filename string){
 }
 
 func (fs OverlayFS) removefromDeleted (filename string){
+	_, exists:= fs.deletedMap[filename]
+	
+	if !exists{ //If not in map, no need to try to remove it 
+		return
+	}
+		
 	delete(fs.deletedMap,filename)
 	fs.writeToDeletedMapFile()
 }
