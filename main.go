@@ -13,12 +13,12 @@ import(
 	"os"
 	"os/signal"
 	"path"
-	"slices"
 	"syscall"
 	"time"
 	"golang.org/x/sys/unix"
 	"errors"
 	"io"
+	"slices"
 	fs1 "io/fs"
 
 )
@@ -176,6 +176,8 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		if err==nil{
 			COW=true
 			COWPath=create_path
+		}else{
+			return newEmpty[billy.File](), err
 		}
 		
 		fileStat,_:=os.Stat(filename)
@@ -188,15 +190,22 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 		
 		if COW {
-			parent_dirs:=parentDirs(original_filename)
+			num_parent_dirs:=len(parentDirs(original_filename))
+			originalParentDirs:=parentDirs(filename)
 			COWParentDirs:=parentDirs(COWPath)
 			
-			slices.Reverse(parent_dirs) //From innermost to outermost
+			slices.Reverse(originalParentDirs) //From innermost to outermost
 			slices.Reverse(COWParentDirs)
 			
-			for i,_ := range parent_dirs{ //Create parent directories of file in COW directories
-				os.Mkdir(COWParentDirs[i],0700)
-				setPermissions(parent_dirs[i],COWParentDirs[i])
+			for i := 0; i < num_parent_dirs; i++{ //Create parent directories of file in COW directories. From innermost to outermost
+				originalDir:=originalParentDirs[i]
+				COWDir:=COWParentDirs[i]
+				
+				fmt.Println(COWDir)
+				fmt.Println(originalDir)
+				
+				os.MkdirAll(COWDir,0700)
+				setPermissions(originalDir,COWDir)
 			}
 			
 			src,_:=os.Open(filename)
