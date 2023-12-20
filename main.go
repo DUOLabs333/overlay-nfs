@@ -108,7 +108,8 @@ func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 	
 	fmt.Println("Lstat:",filename)
 
-	return os.Lstat(fs.findFirstExisting(filename))
+	result, err:=os.Lstat(fs.findFirstExisting(filename))
+	return OverlayStat{result,result,filename,fs}, err
 }
 
 func (fs OverlayFS) Readlink(link string) (string, error){
@@ -172,12 +173,12 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		create_path, err:= fs.createPath(original_filename)
 		
 		delete(fs.deletedMap,original_filename)
-				
-		if err==nil{
+		
+		if err!=nil{
+			return newEmpty[billy.File](), err
+		}else{	
 			COW=true
 			COWPath=create_path
-		}else{
-			return newEmpty[billy.File](), err
 		}
 		
 		fileStat,_:=os.Stat(filename)
@@ -185,9 +186,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		isRegular := fileMode.IsRegular() 
 		isSymlink := (fileMode & fs1.ModeSymlink != 0)
 		
-		if COW {
-			COW=isRegular || isSymlink //Check that file is regular or is a symlink
-		}
+		COW=COW && (isRegular || isSymlink) //Check that file is regular or is a symlink
 		
 		if COW {
 			num_parent_dirs:=len(parentDirs(original_filename))
