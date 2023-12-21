@@ -75,52 +75,6 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	return result,err
 }
 
-func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
-	if fs.checkIfDeleted(filename){
-		return newEmpty[os.FileInfo](), os.ErrNotExist
-	}
-	
-	fmt.Println("Stat:",filename)
-	
-	//NFS makes no distinction between Lstat and Stat so the following code had to be commented out.
-	/*
-	overlayfs_filename:=fs.findFirstExisting(filename)
-	
-	symlink, err:=fs.Readlink(overlayfs_filename)
-	
-	if err==nil{
-		if !filepath.IsAbs(symlink){
-			symlink=path.Join(filepath.Dir(filename),symlink)
-		}
-		filename=symlink
-	}else{
-		filename=filename
-	}
-	*/
-	return fs.Lstat(filename)
-}
-
-func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
-	if fs.checkIfDeleted(filename){
-		return newEmpty[os.FileInfo](), os.ErrNotExist
-	}
-	
-	fmt.Println("Lstat:",filename)
-
-	result, err:=os.Lstat(fs.findFirstExisting(filename))
-	return OverlayStat{result,result,filename,fs}, err
-}
-
-func (fs OverlayFS) Readlink(link string) (string, error){
-	 if fs.checkIfDeleted(link){
-		 return "",os.ErrNotExist
-	 }
-	 
-	 fmt.Println("Readlink:",link)
-	 
-	 return os.Readlink(fs.findFirstExisting(link))
-}
-	 
 func (fs OverlayFS) Chtimes(name string, atime time.Time, mtime time.Time) error{
 	if fs.checkIfDeleted(name){
 		return os.ErrNotExist
