@@ -47,7 +47,33 @@ func (fs OverlayFS) Mkdir(path string, perm os.FileMode) error {
 	if err!=nil{
 		return err
 	}
+	
+	if _, err := os.Stat(filename); !os.IsNotExist(err) {
+		return nil
+	}
+	
+	fmt.Println(filename)
 	return os.Mkdir(filename, perm)
+		
+}
+
+func (fs OverlayFS) MkdirAll(path string, perm os.FileMode) error {
+	defer fs.createErrorCheck(path)
+	
+	fmt.Println("MkdirAll:",path)
+	
+	dirs:=parentDirs(path)
+	
+	dirs=append(dirs,path)
+
+	for _, dir := range dirs{
+		err:=fs.Mkdir(dir,perm)
+		if err!=nil{
+			return err
+		}
+	}
+	
+	return nil
 		
 }
 

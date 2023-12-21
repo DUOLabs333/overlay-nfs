@@ -125,6 +125,11 @@ func NewFS(options []string, mountpoint string) (OverlayFS){
 	return result
 }
 
+func (fs OverlayFS) Equal( a any) bool{
+	b,_:=a.(OverlayFS)
+	return fs.mountpoint==b.mountpoint
+}
+
 func setPermissions(src, dest string) {
 	srcStat,err:=os.Lstat(src)
 	if err!=nil{
