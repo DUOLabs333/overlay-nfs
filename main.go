@@ -99,9 +99,9 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	isWrite:=(flag & writeConstants !=0)
 	
-	fmt.Println("Openfile:",original_filename)
+	fmt.Println("Openfile:",filename)
 	
-	if fs.checkIfExists(filename){ //If file has been explicitly deleted, any call to Open will fail...
+	if !fs.checkIfExists(filename){ //If file has been explicitly deleted, any call to Open will fail...
 		if (flag & os.O_CREATE == 0){ //...except for CREATE
 			return newEmpty[billy.File](), os.ErrNotExist
 		}
@@ -111,13 +111,13 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	
 	if (fs.checkIfExists(filename) && fs.getModeofFirstExisting(filename)=="RO" && isWrite){
-		fs.deletedMap[original_filename]=true //Done to force createPath to create file above the current existing one
+		fs.deletedMap[filename]=true //Done to force createPath to create file above the current existing one
 		COW:=false
 		COWPath:=""
 		originalPath:=fs.findFirstExisting(filename)
 		create_path, err:= fs.createPath(filename)
 		
-		delete(fs.deletedMap,original_filename)
+		delete(fs.deletedMap,filename)
 		
 		if err!=nil{
 			return newEmpty[billy.File](), err
@@ -166,6 +166,9 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			setPermissions(originalPath, COWPath) //Make file with the same permissions as before
 			
 			filename=COWPath
+		}else{
+			return newEmpty[billy.File](), os.ErrInvalid
+		}
 	}else{
 	
 		if (flag & os.O_CREATE !=0){
@@ -179,12 +182,12 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			filename=fs.findFirstExisting(filename)
 		}
 	}
-	}
 	
+	fmt.Println(filename)
 	open,err:=os.OpenFile(filename,flag,perm)
 	
 	if (flag & os.O_CREATE != 0){
-		defer fs.createErrorCheck(original_filename)
+		defer fs.createErrorCheck(filename)
 	}
 	
 	return &OverlayFile{open},err
