@@ -13,6 +13,9 @@ func (fs OverlayFS) createErrorCheck(path string) {
 	_,err:=os.Lstat(fs.findFirstExisting(path))
 	if err==nil{
 		fs.removefromDeleted(path)
+	}else{
+		fmt.Println("createErrorCheck: ",path)
+		fmt.Println("createErrorCheck Error: ",err)
 	}
 	fmt.Println("Error check completed!")
 }
@@ -122,6 +125,7 @@ func (fs OverlayFS) Symlink(link string, path string) error {
 	
 	filename,err:=fs.createPath(path)
 	if err!=nil{
+		fmt.Println("Symlink error: ",err)
 		return err
 	}
 	

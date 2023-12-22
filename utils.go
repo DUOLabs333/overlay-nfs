@@ -259,7 +259,7 @@ func (fs OverlayFS) joinRelative(Path string) ([]string){
 func (fs OverlayFS) indexOfFirstExisting(filename string) int{
 	possibleFiles:=fs.joinRelative(filename)
 	for i, file := range possibleFiles{
-		_,err:=os.Stat(file)
+		_,err:=os.Lstat(file)
 		if err==nil{
 			return i
 		}

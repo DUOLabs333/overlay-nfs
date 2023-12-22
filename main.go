@@ -29,7 +29,6 @@ func (fs OverlayFS) Join(elem ...string) string{
 }
 
 func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
-	
 	if !fs.checkIfExists(path){
 		return make([]os.FileInfo,0), os.ErrNotExist
 	}
@@ -99,8 +98,11 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
 	writeConstants:=os.O_RDWR|os.O_WRONLY|os.O_APPEND|os.O_TRUNC
-	
 	isWrite:=(flag & writeConstants !=0)
+	
+	if (flag & os.O_CREATE != 0){
+		defer fs.createErrorCheck(filename)
+	}
 	
 	fmt.Println("Openfile:",filename)
 	
@@ -188,10 +190,6 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	fmt.Println(filename)
 	open,err:=os.OpenFile(filename,flag,perm)
-	
-	if (flag & os.O_CREATE != 0){
-		defer fs.createErrorCheck(filename)
-	}
 	
 	fmt.Println("Openfile finished!")
 	return &OverlayFile{open},err
