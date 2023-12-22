@@ -180,7 +180,7 @@ func (fs OverlayFS) createPath(filename string) (string, error){ //If file is de
 	_,err:=os.Lstat(original_path)
 	original_path_exists:=(err==nil)
 
-	if fs.checkIfExists(filepath.Dir(filename)){ //You can not create a file if the parent directory does not exist
+	if !fs.checkIfExists(filepath.Dir(filename)){ //You can not create a file if the parent directory does not exist
 		return newEmpty[string](), os.ErrNotExist
 	}
 	
@@ -230,24 +230,23 @@ func (fs OverlayFS) createPath(filename string) (string, error){ //If file is de
 	}
 	sort.Ints(keys)
 	
-	fmt.Println(pathMap)
 	dirs:=pathMap[keys[0]]
 	
 	if len(keys)>1{ //Pick the directories with the most number of subdirectories already created
 		dirs=pathMap[keys[1]]
 	}
 	
-	possible_path:=""
+	possible_dir:=""
 	
 	if len(dirs)==0{ //No suitable directories
 		return newEmpty[string](), os.ErrNotExist
 	}else{
-		possible_path=dirs[rand.Intn(len(dirs))] //Randomly pick a directory to balance out the load
+		possible_dir=dirs[rand.Intn(len(dirs))] //Randomly pick a directory to balance out the load
 	}
 	
-	os.MkdirAll(fs.Join(possible_path,filepath.Dir(filename)),0700)
+	err=os.MkdirAll(fs.Join(possible_dir,filepath.Dir(filename)),0700)
 	
-	return fs.Join(possible_path,filename), nil
+	return fs.Join(possible_dir,filename), err
 }
 func (fs OverlayFS) joinRelative(Path string) ([]string){
 	result:=make([]string,0,len(fs.paths))

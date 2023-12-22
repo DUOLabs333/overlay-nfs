@@ -58,6 +58,9 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 				if err!=nil{
 					continue
 				}
+				if !fs.checkIfExists(fs.Join(path,entry.Name())){
+					continue
+				}
 				dirMap[entry.Name()]=info
 			}
 		}
@@ -116,7 +119,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		COWPath:=""
 		originalPath:=fs.findFirstExisting(filename)
 		create_path, err:= fs.createPath(filename)
-		
+		fmt.Println(create_path)
 		delete(fs.deletedMap,filename)
 		
 		if err!=nil{
@@ -190,6 +193,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		defer fs.createErrorCheck(filename)
 	}
 	
+	fmt.Println("Openfile finished!")
 	return &OverlayFile{open},err
 }
 
@@ -200,20 +204,18 @@ func (fs OverlayFS) Remove(filename string) error{
 	
 	fmt.Println("Remove:",filename)
 	
-	original_filename:=filename
-	
-	filename=fs.findFirstExisting(original_filename)
-	
 	var err error
-	if fs.getModeofFirstExisting(original_filename)=="RW"{
-		err=os.Remove(filename)
-	}else{
-		err=nil
+	if fs.getModeofFirstExisting(filename)=="RW"{
+		err=os.Remove(fs.findFirstExisting(filename))
+		if err!=nil{
+			fmt.Println("Remove Error: ",err)
+			return err
+		}
 	}
 	
-	fs.addToDeleted(original_filename)
+	fs.addToDeleted(filename)
 	
-	return err
+	return nil
 }
 
 var port chan int = make(chan int,1)

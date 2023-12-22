@@ -24,12 +24,17 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 		return err
 	}
 	
-	if fs.getModeofFirstExisting(oldpath)=="RO" || fs.getModeofFirstExisting(newpath)=="RO"{
-		new,_:=fs.OpenFile(newpath,os.O_WRONLY,0700) //Activate COW
+	new,err:=fs.OpenFile(newpath,os.O_CREATE|os.O_RDWR,0700) //Activate COW
+	if err!=nil{
+		return err
+	}
+	
+	if fs.getModeofFirstExisting(oldpath)=="RO"{
 		_,err:=io.Copy(new,old)
 		fs.Remove(oldpath)
 		return err
 	}
+	
 	return os.Rename(fs.findFirstExisting(oldpath),fs.findFirstExisting(newpath))
 		
 }
@@ -47,14 +52,11 @@ func (fs OverlayFS) Mkdir(path string, perm os.FileMode) error {
 		return nil
 	}
 	
-	fmt.Println(filename)
 	return os.Mkdir(filename, perm)
 		
 }
 
 func (fs OverlayFS) MkdirAll(path string, perm os.FileMode) error {
-	defer fs.createErrorCheck(path)
-	
 	fmt.Println("MkdirAll:",path)
 	
 	dirs:=parentDirs(path)
@@ -110,7 +112,20 @@ func (fs OverlayFS) Link(link string, path string) error {
 		return err
 	}
 	
-	return unix.Link(link, filename)
+	return unix.Link(fs.findFirstExisting(link), filename)
+}
+
+func (fs OverlayFS) Symlink(link string, path string) error {
+	defer fs.createErrorCheck(path)
+	
+	fmt.Println("Symlink:",path)
+	
+	filename,err:=fs.createPath(path)
+	if err!=nil{
+		return err
+	}
+	
+	return unix.Symlink(link, filename)
 }
 
 func (fs OverlayFS) Socket(path string) error {
