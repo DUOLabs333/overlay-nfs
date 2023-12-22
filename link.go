@@ -24,10 +24,6 @@ func (fs OverlayFS) getTarget(filename string) string{
 }
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
-	if fs.checkIfDeleted(filename){
-		return newEmpty[os.FileInfo](), os.ErrNotExist
-	}
-	
 	fmt.Println("Stat:",filename)
 	
 	//NFS makes no distinction between Lstat and Stat so the following code had to be commented out.
@@ -48,7 +44,7 @@ func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 }
 
 func (fs OverlayFS) Readlink(link string) (string, error){
-	 if fs.checkIfDeleted(link){
+	 if !fs.checkIfExists(link){
 		 return "",os.ErrNotExist
 	 }
 	 
@@ -58,7 +54,7 @@ func (fs OverlayFS) Readlink(link string) (string, error){
 }
 	 
 func (fs OverlayFS) Chown(name string, uid, gid int) error{
-	if fs.checkIfDeleted(name){
+	if !fs.checkIfExists(name){
 		return os.ErrNotExist
 	}
 	
@@ -67,10 +63,23 @@ func (fs OverlayFS) Chown(name string, uid, gid int) error{
 }
 
 func (fs OverlayFS) Lchown(name string, uid, gid int) error{
-	if fs.checkIfDeleted(name){
+	if !fs.checkIfExists(name){
 		return os.ErrNotExist
 	}
-	
 	fmt.Println("Lchown:",name)
+	
+	fs.OpenFile(name,os.O_RDWR,0700) //Activates COW if needed
+	
 	return os.Lchown(fs.findFirstExisting(name),uid,gid)
+}
+
+func (fs OverlayFS) Chmod(name string, mode os.FileMode) error{
+	if !fs.checkIfExists(name){
+		return os.ErrNotExist
+	}
+	fmt.Println("Chmod:",name)
+	
+	fs.OpenFile(name,os.O_RDWR,0700) //Activates COW if needed
+	
+	return os.Chmod(fs.findFirstExisting(name),mode)
 }

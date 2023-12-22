@@ -30,7 +30,7 @@ func (fs OverlayFS) Join(elem ...string) string{
 
 func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	
-	if fs.checkIfDeleted(path){
+	if !fs.checkIfExists(path){
 		return make([]os.FileInfo,0), os.ErrNotExist
 	}
 	
@@ -76,7 +76,7 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 }
 
 func (fs OverlayFS) Chtimes(name string, atime time.Time, mtime time.Time) error{
-	if fs.checkIfDeleted(name){
+	if !fs.checkIfExists(name){
 		return os.ErrNotExist
 	}
 	
@@ -95,35 +95,27 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 }
 
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
-	original_filename:=filename
+	writeConstants:=os.O_RDWR|os.O_WRONLY|os.O_APPEND|os.O_TRUNC
+	
+	isWrite:=(flag & writeConstants !=0)
 	
 	fmt.Println("Openfile:",original_filename)
 	
-	if fs.checkIfDeleted(original_filename){ //If file has been explicitly deleted, any call to Open will fail...
+	if fs.checkIfExists(filename){ //If file has been explicitly deleted, any call to Open will fail...
 		if (flag & os.O_CREATE == 0){ //...except for CREATE
 			return newEmpty[billy.File](), os.ErrNotExist
 		}
 	}
 	
-	filename=fs.findFirstExisting(filename)
-
-	if (flag & os.O_CREATE !=0){
-		create_path, err:=fs.createPath(original_filename)
-		if err!=nil{
-			return newEmpty[billy.File](), err
-		}
-		
-		filename=create_path
-	}else{
-	if fs.getModeofFirstExisting(original_filename)=="RO"{ //COW only matters in RO directories
 	
-	if ((flag & os.O_RDWR !=0) || (flag & os.O_WRONLY !=0)){ //Implement COW only when RDWR or WRONLY.
 	
+	
+	if (fs.checkIfExists(filename) && fs.getModeofFirstExisting(filename)=="RO" && isWrite){
 		fs.deletedMap[original_filename]=true //Done to force createPath to create file above the current existing one
 		COW:=false
 		COWPath:=""
-		
-		create_path, err:= fs.createPath(original_filename)
+		originalPath:=fs.findFirstExisting(filename)
+		create_path, err:= fs.createPath(filename)
 		
 		delete(fs.deletedMap,original_filename)
 		
@@ -134,7 +126,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			COWPath=create_path
 		}
 		
-		fileStat,_:=os.Stat(filename)
+		fileStat,_:=os.Stat(originalPath)
 		fileMode:=fileStat.Mode()
 		isRegular := fileMode.IsRegular() 
 		isSymlink := (fileMode & fs1.ModeSymlink != 0)
@@ -142,8 +134,8 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		COW=COW && (isRegular || isSymlink) //Check that file is regular or is a symlink
 		
 		if COW {
-			num_parent_dirs:=len(parentDirs(original_filename))
-			originalParentDirs:=parentDirs(filename)
+			num_parent_dirs:=len(parentDirs(filename))
+			originalParentDirs:=parentDirs(originalPath)
 			COWParentDirs:=parentDirs(COWPath)
 			
 			slices.Reverse(originalParentDirs) //From innermost to outermost
@@ -160,27 +152,35 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 				setPermissions(originalDir,COWDir)
 			}
 			
-			src,_:=os.Open(filename)
+			src,_:=os.Open(originalPath)
 			
 			if isRegular{
 				dest,_:=os.Create(COWPath)
 			
 				io.Copy(dest,src)
 			}else if isSymlink{
-				target,_ :=os.Readlink(filename)
+				target,_ :=os.Readlink(originalPath)
 				os.Symlink(target,COWPath)
 			}
 			
-			setPermissions(filename, COWPath) //Make file with the same permissions as before
+			setPermissions(originalPath, COWPath) //Make file with the same permissions as before
 			
 			filename=COWPath
+	}else{
+	
+		if (flag & os.O_CREATE !=0){
+			create_path, err:=fs.createPath(filename)
+			if err!=nil{
+				return newEmpty[billy.File](), err
+			}
+			
+			filename=create_path
 		}else{
-			flag=flag & ^(os.O_RDONLY | os.O_RDWR | os.O_WRONLY)
-			flag |= os.O_RDONLY
+			filename=fs.findFirstExisting(filename)
 		}
 	}
-	}	
 	}
+	
 	open,err:=os.OpenFile(filename,flag,perm)
 	
 	if (flag & os.O_CREATE != 0){
@@ -191,7 +191,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 }
 
 func (fs OverlayFS) Remove(filename string) error{
-	if fs.checkIfDeleted(filename){
+	if !fs.checkIfExists(filename){
 		return os.ErrNotExist
 	}
 	

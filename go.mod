@@ -4,6 +4,8 @@ go 1.21.2
 
 replace github.com/willscott/go-nfs => /home/system/go-nfs
 
+//replace github.com/willscott/go-nfs => /home/system/test/go-nfs
+
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/willscott/go-nfs v0.0.2-0.20231216210521-c4b888eab55f

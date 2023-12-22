@@ -24,15 +24,10 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 		return err
 	}
 	
-	_,err=fs.Stat(newpath)
-	
-	if err!=nil{
-		return err
-	}
-	
-	if err==nil && fs.getModeofFirstExisting(newpath)=="RO"{
+	if fs.getModeofFirstExisting(oldpath)=="RO" || fs.getModeofFirstExisting(newpath)=="RO"{
 		new,_:=fs.OpenFile(newpath,os.O_WRONLY,0700) //Activate COW
 		_,err:=io.Copy(new,old)
+		fs.Remove(oldpath)
 		return err
 	}
 	return os.Rename(fs.findFirstExisting(oldpath),fs.findFirstExisting(newpath))
@@ -48,7 +43,7 @@ func (fs OverlayFS) Mkdir(path string, perm os.FileMode) error {
 		return err
 	}
 	
-	if _, err := os.Stat(filename); !os.IsNotExist(err) {
+	if _, err := os.Stat(filename); !os.IsNotExist(err) { //Don't create if it already exists
 		return nil
 	}
 	
