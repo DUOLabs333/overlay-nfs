@@ -21,7 +21,7 @@ func (fs OverlayFS) createErrorCheck(path string) {
 }
 
 func (fs OverlayFS) Rename(oldpath, newpath string) error{
-
+	fmt.Println("Rename: ",newpath)
 	old,err:=fs.Open(oldpath)
 	if err!=nil{
 		return err
@@ -34,6 +34,7 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 	
 	if fs.getModeofFirstExisting(oldpath)=="RO"{
 		_,err:=io.Copy(new,old)
+		new.Close()
 		fs.Remove(oldpath)
 		return err
 	}

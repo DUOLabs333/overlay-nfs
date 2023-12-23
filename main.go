@@ -131,7 +131,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			COWPath=create_path
 		}
 		
-		fileStat,_:=os.Stat(originalPath)
+		fileStat,_:=os.Lstat(originalPath)
 		fileMode:=fileStat.Mode()
 		isRegular := fileMode.IsRegular() 
 		isSymlink := (fileMode & fs1.ModeSymlink != 0)
