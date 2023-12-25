@@ -95,19 +95,6 @@ func (stat OverlayStat) Sys() any{
 	
 } 
 
-func (stat OverlayStat) Mode() os.FileMode {
-	fileMode:=stat.file.Mode()
-	
-	if fileMode & os.ModeSymlink !=0 { //This modification only matters for symlinks
-		_,err:=stat.fs.ReadDir(stat.path)
-		if err!=nil{ //It is a directory
-			fileMode=(fileMode | os.ModeDir) & ^(os.ModeSymlink)
-		}
-	}
-	return fileMode
-	
-}
-
 func NewFS(options []string, mountpoint string) (OverlayFS){
 	result:=OverlayFS{}
 	

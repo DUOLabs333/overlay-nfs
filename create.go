@@ -36,7 +36,7 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 	oldPath:=fs.findFirstExisting(oldpath)
 	
 	if !oldStat.IsDir(){
-		if oldMode=="RW"{ //Can remove
+		if oldMode=="RW"{ //Can remove from oldpath
 			os.Rename(oldPath,newPath)
 		}else{
 			err:=fs.Remove(newpath)

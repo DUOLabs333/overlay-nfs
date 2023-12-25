@@ -70,7 +70,7 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	
 	err:=unspecifiedError
 	err=nil
-	
+	fmt.Println("dirMap: ",dirMap)
 	return result,err
 }
 
