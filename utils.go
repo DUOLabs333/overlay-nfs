@@ -17,6 +17,7 @@ import(
 	"sort"
 	"math/rand"
 	"hash/fnv"
+	"errors"
 )
 
 func runCommand(args... string){
@@ -55,6 +56,7 @@ func (*OverlayFile) Lock() error{
 	return nil
 }
 
+var unspecifiedError error = errors.New("H") //Just an arbitary error
 
 type OverlayStat struct{
 	 os.FileInfo
@@ -63,27 +65,28 @@ type OverlayStat struct{
 	 fs OverlayFS
 }
 
+
 func hashString(s string) uint64 {
 		h := fnv.New64a()
 		h.Write([]byte(s))
 		return h.Sum64()
 }
 
-func (f OverlayStat) Sys() any{
-	original:=f.file.Sys()
+func (stat OverlayStat) Sys() any{
+	original:=stat.file.Sys()
 	info, ok:=original.(*syscall.Stat_t)
 	if !ok{
 		return original
 	}
 	
-	if !f.IsDir(){
+	if !stat.IsDir(){
 		return original
 	}
 	
-	ino, exists := f.fs.dirInoMap[f.path]
+	ino, exists := stat.fs.dirInoMap[stat.path]
 	if !exists{//The inode of a directory can change udring the course of a mount due to COW. This keeps it static by just using the hash. It should be unique enough, and if needed, we can implement more thorough checks for things like symlinks.
-		ino=hashString(f.path)
-		f.fs.dirInoMap[f.path]=ino
+		ino=hashString(stat.path)
+		stat.fs.dirInoMap[stat.path]=ino
 	}
 	
 	info.Ino=ino
@@ -91,6 +94,19 @@ func (f OverlayStat) Sys() any{
 	return info
 	
 } 
+
+func (stat OverlayStat) Mode() os.FileMode {
+	fileMode:=stat.file.Mode()
+	
+	if fileMode & os.ModeSymlink !=0 { //This modification only matters for symlinks
+		_,err:=stat.fs.ReadDir(stat.path)
+		if err!=nil{ //It is a directory
+			fileMode=(fileMode | os.ModeDir) & ^(os.ModeSymlink)
+		}
+	}
+	return fileMode
+	
+}
 
 func NewFS(options []string, mountpoint string) (OverlayFS){
 	result:=OverlayFS{}

@@ -1,25 +1,22 @@
 package main
 
-import(
-
+import (
 	billy "github.com/go-git/go-billy/v5"
 	nfs "github.com/willscott/go-nfs"
 	nfshelper "github.com/willscott/go-nfs/helpers"
 
 	"flag"
 	"fmt"
+	"io"
+	fs1 "io/fs"
 	"log"
 	"net"
-	"os"
 	"os/signal"
-	"path"
 	"syscall"
-	"time"
-	"errors"
-	"io"
 	"slices"
-	fs1 "io/fs"
-
+	"os"
+	"time"
+	"path"
 )
 
 
@@ -35,19 +32,21 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	
 	fmt.Println("ReadDir:",path)
 	
-	dirs:=fs.joinRelative(path)
+	dirs:=fs.joinRelative(path)[fs.indexOfFirstExisting(path):]
 	dirMap:=make(map[string]os.FileInfo)
 	result:=make([]os.FileInfo,0)
-	existsOneDir:=false //Whether at least one dir in dirs is a directory
 	
 	
-	for _, dir :=range dirs{
+	for i, dir :=range dirs{
 		dirEntries,err:=os.ReadDir(dir)
 		if err!=nil{
-			continue
-		}else{
-			existsOneDir=true
+			if i==0{ //Since the top-level directory determines the behavior of everything else, if it isn't a directory, no point in continuing
+				return make([]os.FileInfo,0), err
+			}else{ //The higher-level directories cover for it
+				continue
+			}
 		}
+		
 		for _, entry:= range dirEntries{
 			_,ok:=dirMap[entry.Name()]
 			if ok{ //If there's A/C and B/C, take A/C
@@ -69,11 +68,9 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 		result=append(result,info)
 	}
 	
-	err:=errors.New("H")
+	err:=unspecifiedError
 	err=nil
-	if !existsOneDir{
-		err=os.ErrInvalid
-	}
+	
 	return result,err
 }
 
@@ -83,7 +80,12 @@ func (fs OverlayFS) Chtimes(name string, atime time.Time, mtime time.Time) error
 	}
 	
 	fmt.Println("Chtimes:",name)
-	return os.Chtimes(fs.findFirstExisting(name),atime,mtime)
+	
+	if fs.getModeofFirstExisting(name)=="RW"{
+		return os.Chtimes(fs.findFirstExisting(name),atime,mtime)
+	}else{
+		return nil //On RO, it's a no-op
+	}
 }
 
 func (fs OverlayFS) Open(filename string) (billy.File, error){
@@ -99,15 +101,13 @@ func (fs OverlayFS) Create(filename string) (billy.File, error){
 func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error){
 	writeConstants:=os.O_RDWR|os.O_WRONLY|os.O_APPEND|os.O_TRUNC
 	isWrite:=(flag & writeConstants !=0)
-	
-	if (flag & os.O_CREATE != 0){
-		defer fs.createErrorCheck(filename)
-	}
+	isCreate:=(flag & os.O_CREATE !=0)
+	original_filename:=filename
 	
 	fmt.Println("Openfile:",filename)
 	
 	if !fs.checkIfExists(filename){ //If file has been explicitly deleted, any call to Open will fail...
-		if (flag & os.O_CREATE == 0){ //...except for CREATE
+		if !isCreate{ //...except for CREATE
 			return newEmpty[billy.File](), os.ErrNotExist
 		}
 	}
@@ -163,6 +163,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 				dest,_:=os.Create(COWPath)
 			
 				io.Copy(dest,src)
+				dest.Close()
 			}else if isSymlink{
 				target,_ :=os.Readlink(originalPath)
 				os.Symlink(target,COWPath)
@@ -176,7 +177,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}
 	}else{
 	
-		if (flag & os.O_CREATE !=0){
+		if isCreate{
 			create_path, err:=fs.createPath(filename)
 			if err!=nil{
 				return newEmpty[billy.File](), err
@@ -186,6 +187,10 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		}else{
 			filename=fs.findFirstExisting(filename)
 		}
+	}
+	
+	if isCreate{
+		defer fs.createErrorCheck(filename, original_filename)
 	}
 	
 	fmt.Println(filename)
@@ -209,7 +214,16 @@ func (fs OverlayFS) Remove(filename string) error{
 			fmt.Println("Remove Error: ",err)
 			return err
 		}
+	}else{
+		fileStat,_:=fs.Lstat(filename)
+		if fileStat.IsDir(){
+			fileRead,_:=fs.ReadDir(filename)
+			if len(fileRead)!=0{ //Can't remove a non-empty directory
+				return unspecifiedError
+			}
+		}
 	}
+			
 	
 	fs.addToDeleted(filename)
 	

@@ -9,8 +9,8 @@ import(
 
 //The "Create" functions
 
-func (fs OverlayFS) createErrorCheck(path string) {
-	_,err:=os.Lstat(fs.findFirstExisting(path))
+func (fs OverlayFS) createErrorCheck(create_path, path string) {
+	_,err:=os.Lstat(create_path)
 	if err==nil{
 		fs.removefromDeleted(path)
 	}else{
@@ -21,30 +21,104 @@ func (fs OverlayFS) createErrorCheck(path string) {
 }
 
 func (fs OverlayFS) Rename(oldpath, newpath string) error{
+	if !fs.checkIfExists(oldpath){
+		return os.ErrNotExist
+	}
 	fmt.Println("Rename: ",newpath)
-	old,err:=fs.Open(oldpath)
+	
+	newPath,err:=fs.createPath(newpath)
 	if err!=nil{
 		return err
 	}
 	
-	new,err:=fs.OpenFile(newpath,os.O_CREATE|os.O_RDWR,0700) //Activate COW
-	if err!=nil{
-		return err
+	oldStat,_:=fs.Lstat(oldpath)
+	oldMode:=fs.getModeofFirstExisting(oldpath)
+	oldPath:=fs.findFirstExisting(oldpath)
+	
+	if !oldStat.IsDir(){
+		if oldMode=="RW"{ //Can remove
+			os.Rename(oldPath,newPath)
+		}else{
+			err:=fs.Remove(newpath)
+			if err!=nil{
+				return err
+			}
+			
+			if oldStat.Mode().IsRegular(){
+				old,err:=fs.Open(oldpath)
+				if err!=nil{
+					return err
+				}
+				
+				err=fs.Remove(newpath) //This matters when dealing with non-(regular files), eg. directories.
+				if err!=nil{
+					return err
+				}
+				
+				new,err:=fs.OpenFile(newpath,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0666)
+				if err!=nil{
+					return err
+				}
+				
+				_,err=io.Copy(new, old)
+				if err!=nil{
+					return err
+				}
+			} else if oldStat.Mode() & os.ModeSymlink != 0 {
+				err=fs.Remove(newpath) //This matters when dealing with non-(regular files), eg. directories.
+				if err!=nil{
+					return err
+				}
+				
+				oldTarget, err:=fs.Readlink(oldpath)
+				if err!=nil{
+					return err
+				}
+				
+				err=fs.Symlink(oldTarget, newpath)
+				if err != nil{
+					return err
+				}
+			}else{ //If it's something like a device, I just don't want to deal with all the different options. I may deal with them later if it becomes an issue
+				return unspecifiedError
+			}
+		}
+	}else{
+		err=fs.Remove(newpath)
+		if err!=nil{
+			return err
+		}
+		
+		err=fs.Mkdir(newpath,0666)
+		if err!=nil{
+			return err
+		}
+		
+		items, err:=fs.ReadDir(oldpath)
+		if err!=nil{
+			return err
+		}
+		for _, item:= range items{
+			name:=item.Name()
+			err=fs.Rename(fs.Join(oldpath,name),fs.Join(newpath,name))
+			if err!=nil{
+				return err
+			}
+		}
 	}
 	
-	if fs.getModeofFirstExisting(oldpath)=="RO"{
-		_,err:=io.Copy(new,old)
-		new.Close()
-		fs.Remove(oldpath)
-		return err
+	if !(oldMode=="RW" && !oldStat.IsDir()){ //So there was no os.Rename
+		setPermissions(oldPath,newPath)
+		err:=fs.Remove(oldpath)
+		if err!=nil{
+			return err
+		}
 	}
 	
-	return os.Rename(fs.findFirstExisting(oldpath),fs.findFirstExisting(newpath))
+	return nil
 		
 }
 func (fs OverlayFS) Mkdir(path string, perm os.FileMode) error {
-	defer fs.createErrorCheck(path)
-	
 	fmt.Println("Mkdir:",path)
 	
 	filename,err:=fs.createPath(path)
@@ -52,10 +126,11 @@ func (fs OverlayFS) Mkdir(path string, perm os.FileMode) error {
 		return err
 	}
 	
-	if _, err := os.Stat(filename); !os.IsNotExist(err) { //Don't create if it already exists
+	if _, err := os.Lstat(filename); !os.IsNotExist(err) { //Don't create if it already exists
 		return nil
 	}
 	
+	defer fs.createErrorCheck(filename,path)
 	return os.Mkdir(filename, perm)
 		
 }
@@ -79,7 +154,6 @@ func (fs OverlayFS) MkdirAll(path string, perm os.FileMode) error {
 }
 
 func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) error {
-	defer fs.createErrorCheck(path)
 	
 	fmt.Println("Mknod:",path)
 	
@@ -89,12 +163,13 @@ func (fs OverlayFS) Mknod(path string, mode uint32, major uint32, minor uint32) 
 	}
 	
 	dev := unix.Mkdev(major, minor)
+	
+	defer fs.createErrorCheck(filename,path)
 	return unix.Mknod(filename, mode, int(dev))
 		
 }
 
 func (fs OverlayFS) Mkfifo(path string, mode uint32) error {
-	defer fs.createErrorCheck(path)
 	
 	fmt.Println("Mkfifo:",path)
 	
@@ -103,11 +178,14 @@ func (fs OverlayFS) Mkfifo(path string, mode uint32) error {
 		return err
 	}
 	
+	defer fs.createErrorCheck(filename,path)
 	return unix.Mkfifo(filename, mode)
 }
 
 func (fs OverlayFS) Link(link string, path string) error {
-	defer fs.createErrorCheck(path)
+	if !fs.checkIfExists(link){
+		return nil
+	}
 	
 	fmt.Println("Link:",path)
 	
@@ -116,12 +194,11 @@ func (fs OverlayFS) Link(link string, path string) error {
 		return err
 	}
 	
+	defer fs.createErrorCheck(filename,path)
 	return unix.Link(fs.findFirstExisting(link), filename)
 }
 
 func (fs OverlayFS) Symlink(link string, path string) error {
-	defer fs.createErrorCheck(path)
-	
 	fmt.Println("Symlink:",path)
 	
 	filename,err:=fs.createPath(path)
@@ -130,11 +207,11 @@ func (fs OverlayFS) Symlink(link string, path string) error {
 		return err
 	}
 	
+	defer fs.createErrorCheck(filename,path)
 	return unix.Symlink(link, filename)
 }
 
 func (fs OverlayFS) Socket(path string) error {
-	defer fs.createErrorCheck(path)
 	
 	fmt.Println("Socket:",path)
 	
@@ -147,5 +224,7 @@ func (fs OverlayFS) Socket(path string) error {
 	if err != nil {
 		return err
 	}
+	
+	defer fs.createErrorCheck(filename,path)
 	return unix.Bind(fd, &unix.SockaddrUnix{Name: filename})
 }
