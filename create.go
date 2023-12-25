@@ -39,18 +39,13 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 		if oldMode=="RW"{ //Can remove from oldpath
 			os.Rename(oldPath,newPath)
 		}else{
-			err:=fs.Remove(newpath)
-			if err!=nil{
+			err:=fs.Remove(newpath) //This matters when dealing with non-(regular files), eg. directories.
+			if err!=nil && !os.IsNotExist(err){
 				return err
 			}
 			
 			if oldStat.Mode().IsRegular(){
 				old,err:=fs.Open(oldpath)
-				if err!=nil{
-					return err
-				}
-				
-				err=fs.Remove(newpath) //This matters when dealing with non-(regular files), eg. directories.
 				if err!=nil{
 					return err
 				}
@@ -61,14 +56,11 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 				}
 				
 				_,err=io.Copy(new, old)
+				new.Close()
 				if err!=nil{
 					return err
 				}
 			} else if oldStat.Mode() & os.ModeSymlink != 0 {
-				err=fs.Remove(newpath) //This matters when dealing with non-(regular files), eg. directories.
-				if err!=nil{
-					return err
-				}
 				
 				oldTarget, err:=fs.Readlink(oldpath)
 				if err!=nil{
@@ -85,12 +77,12 @@ func (fs OverlayFS) Rename(oldpath, newpath string) error{
 		}
 	}else{
 		err=fs.Remove(newpath)
-		if err!=nil{
+		if err!=nil && !os.IsNotExist(err){
 			return err
 		}
 		
 		err=fs.Mkdir(newpath,0666)
-		if err!=nil{
+		if err!=nil && !os.IsExist(err){
 			return err
 		}
 		

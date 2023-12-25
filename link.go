@@ -33,7 +33,7 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 
 func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 	if fs.checkIfDeleted(filename){
-		return newEmpty[os.FileInfo](), os.ErrNotExist
+		return nil, os.ErrNotExist
 	}
 	
 	fmt.Println("Lstat:",filename)

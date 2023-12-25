@@ -108,7 +108,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	if !fs.checkIfExists(filename){ //If file has been explicitly deleted, any call to Open will fail...
 		if !isCreate{ //...except for CREATE
-			return newEmpty[billy.File](), os.ErrNotExist
+			return nil, os.ErrNotExist
 		}
 	}
 	
@@ -125,7 +125,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		delete(fs.deletedMap,filename)
 		
 		if err!=nil{
-			return newEmpty[billy.File](), err
+			return nil, err
 		}else{	
 			COW=true
 			COWPath=create_path
@@ -173,14 +173,14 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 			
 			filename=COWPath
 		}else{
-			return newEmpty[billy.File](), os.ErrInvalid
+			return nil, os.ErrInvalid
 		}
 	}else{
 	
 		if isCreate{
 			create_path, err:=fs.createPath(filename)
 			if err!=nil{
-				return newEmpty[billy.File](), err
+				return nil, err
 			}
 			
 			filename=create_path
@@ -243,7 +243,7 @@ func runServer(options []string,mountpoint string){
 	panicOnErr(err, "starting TCP listener")
 	fs:=NewFS(options,mountpoint)
 	handler := nfshelper.NewNullAuthHandler(fs)
-	cacheHelper := nfshelper.NewCachingHandler(handler, 100000000000)
+	cacheHelper := nfshelper.NewCachingHandler(handler, 100000000000000)
 	panicOnErr(nfs.Serve(listener, cacheHelper), "serving nfs")
 }
 

@@ -184,7 +184,7 @@ func (fs OverlayFS) createPath(filename string) (string, error){ //If file is de
 	original_path_exists:=(err==nil)
 
 	if !fs.checkIfExists(filepath.Dir(filename)){ //You can not create a file if the parent directory does not exist
-		return newEmpty[string](), os.ErrNotExist
+		return "", os.ErrNotExist
 	}
 	
 	if fileExists && fs.getModeofFirstExisting(filename)=="RW"{ //No need to create another one
@@ -242,7 +242,7 @@ func (fs OverlayFS) createPath(filename string) (string, error){ //If file is de
 	possible_dir:=""
 	
 	if len(dirs)==0{ //No suitable directories
-		return newEmpty[string](), os.ErrNotExist
+		return "", os.ErrNotExist
 	}else{
 		possible_dir=dirs[rand.Intn(len(dirs))] //Randomly pick a directory to balance out the load
 	}
