@@ -3,25 +3,36 @@ import (
 	"os"
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 func (fs OverlayFS) getTarget(filename string) string{
-	target, err:=fs.Readlink(filename)
-	
-	if err==nil{
-		if !filepath.IsAbs(target){
-			target=fs.Join(filepath.Dir(filename),target)
-		}else{
-			target=target
-		}
-	}else{
-		target=filename
-	}
-	
-	return target
-}
 
-//Maybe make recursiveGetTarget that goes until it reads itself (so we know when to end)?
+	inputDirs:=strings.Split(filename,string(os.PathSeparator))
+	outputDir:=""
+	
+	for i, _ := range inputDirs {
+		dir:=fs.Join(outputDir,inputDirs[i])
+		if fs.checkIfDeleted(dir){
+			outputDir=fs.Join(dir,inputDirs[i+1:len(inputDirs)]...) //No point in continuing
+			break
+		}
+		for true {
+			target, err:=os.Readlink(fs.findFirstExisting(filename))
+			if err!=nil{ //It's not a link
+				outputDir=dir
+				break
+			}else{
+				if !filepath.IsAbs(target){
+					dir=fs.Join(filepath.Dir(dir),target)
+				}else{
+					dir=target
+				}
+			}
+		}
+	}
+	return outputDir
+}
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	fmt.Println("Stat:",filename)
@@ -37,20 +48,23 @@ func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
 	}
 	
 	fmt.Println("Lstat:",filename)
-
+	
+	filename=fs.Join(fs.getTarget(filepath.Dir(filename)),filepath.Base(filename)) //Resolve everything except for the last part
+	
 	result, err:=os.Lstat(fs.findFirstExisting(filename))
 	fmt.Println("Lstat finished!")
 	return OverlayStat{result,result,filename,fs}, err
 }
 
-func (fs OverlayFS) Readlink(link string) (string, error){
-	 if !fs.checkIfExists(link){
+func (fs OverlayFS) Readlink(filename string) (string, error){
+	 if !fs.checkIfExists(filename){
 		 return "",os.ErrNotExist
 	 }
 	 
-	 fmt.Println("Readlink:",link)
+	 fmt.Println("Readlink:",filename)
 	 
-	 return os.Readlink(fs.findFirstExisting(link))
+	 filename=fs.Join(fs.getTarget(filepath.Dir(filename)),filepath.Base(filename)) //Resolve everything except for the last part
+	 return os.Readlink(fs.findFirstExisting(filename))
 }
 	 
 func (fs OverlayFS) Chown(name string, uid, gid int) error{
@@ -62,24 +76,28 @@ func (fs OverlayFS) Chown(name string, uid, gid int) error{
 	return fs.Lchown(fs.getTarget(name), uid, gid)
 }
 
-func (fs OverlayFS) Lchown(name string, uid, gid int) error{
-	if !fs.checkIfExists(name){
+func (fs OverlayFS) Lchown(filename string, uid, gid int) error{
+	if !fs.checkIfExists(filename){
 		return os.ErrNotExist
 	}
-	fmt.Println("Lchown:",name)
+	fmt.Println("Lchown:",filename)
 	
-	fs.OpenFile(name,os.O_RDWR,0700) //Activates COW if needed
+	filename=fs.Join(fs.getTarget(filepath.Dir(filename)),filepath.Base(filename)) //Resolve everything except for the last part
 	
-	return os.Lchown(fs.findFirstExisting(name),uid,gid)
+	fs.OpenFile(filename,os.O_RDWR,0700) //Activates COW if needed
+	
+	return os.Lchown(fs.findFirstExisting(filename),uid,gid)
 }
 
-func (fs OverlayFS) Chmod(name string, mode os.FileMode) error{
-	if !fs.checkIfExists(name){
+func (fs OverlayFS) Chmod(filename string, mode os.FileMode) error{
+	if !fs.checkIfExists(filename){
 		return os.ErrNotExist
 	}
-	fmt.Println("Chmod:",name)
+	fmt.Println("Chmod:", filename)
 	
-	fs.OpenFile(name,os.O_RDWR,0700) //Activates COW if needed
+	filename=fs.getTarget(filename) //Chmod acts on files, not symlinks
 	
-	return os.Chmod(fs.findFirstExisting(name),mode)
+	fs.OpenFile(filename,os.O_RDWR,0700) //Activates COW if needed
+	
+	return os.Chmod(fs.findFirstExisting(filename),mode)
 }
