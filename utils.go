@@ -84,7 +84,7 @@ func (stat OverlayStat) Sys() any{
 	}
 	
 	ino, exists := stat.fs.dirInoMap[stat.path]
-	if !exists{//The inode of a directory can change udring the course of a mount due to COW. This keeps it static by just using the hash. It should be unique enough, and if needed, we can implement more thorough checks for things like symlinks.
+	if !exists{//The inode of a directory can change during the course of a mount due to COW. This keeps it static by just using the hash. It should be unique enough, and if needed, we can implement more thorough checks for things like symlinks.
 		ino=hashString(stat.path)
 		stat.fs.dirInoMap[stat.path]=ino
 	}

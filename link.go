@@ -3,25 +3,25 @@ import (
 	"os"
 	"fmt"
 	"path/filepath"
-	"path"
 )
 
 func (fs OverlayFS) getTarget(filename string) string{
-	overlayfs_filename:=fs.findFirstExisting(filename)
-	
-	symlink, err:=fs.Readlink(overlayfs_filename)
+	target, err:=fs.Readlink(filename)
 	
 	if err==nil{
-		if !filepath.IsAbs(symlink){
-			symlink=path.Join(filepath.Dir(filename),symlink)
+		if !filepath.IsAbs(target){
+			target=fs.Join(filepath.Dir(filename),target)
+		}else{
+			target=target
 		}
-		filename=symlink
 	}else{
-		filename=filename
+		target=filename
 	}
 	
-	return filename
+	return target
 }
+
+//Maybe make recursiveGetTarget that goes until it reads itself (so we know when to end)?
 
 func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 	fmt.Println("Stat:",filename)

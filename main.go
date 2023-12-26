@@ -193,7 +193,13 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 		defer fs.createErrorCheck(filename, original_filename)
 	}
 	
-	fmt.Println(filename)
+	tempStat,err:=fs.Lstat(original_filename)
+	readLink,_:=fs.Readlink(original_filename)
+	if err==nil && (tempStat.Mode() & os.ModeSymlink !=0){
+		fmt.Println("Symlink1: %s",original_filename)
+		fmt.Println("Maps to: %s", readLink)
+	}
+	
 	open,err:=os.OpenFile(filename,flag,perm)
 	
 	fmt.Println("Openfile finished!")
