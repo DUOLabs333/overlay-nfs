@@ -91,6 +91,8 @@ func (stat OverlayStat) Sys() any{
 	
 	info.Ino=ino
 	
+	fmt.Printf("Path %s has ino %x\n",stat.path,ino)
+	
 	return info
 	
 } 

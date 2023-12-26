@@ -52,11 +52,10 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 			if ok{ //If there's A/C and B/C, take A/C
 				continue
 			}else{
-				info, err:=entry.Info()
+				info, err:=fs.Lstat(fs.Join(path,entry.Name()))
+				fmt.Printf("Done with %s!\n",fs.Join(path,entry.Name()))
+				fmt.Println()
 				if err!=nil{
-					continue
-				}
-				if !fs.checkIfExists(fs.Join(path,entry.Name())){
 					continue
 				}
 				dirMap[entry.Name()]=info
@@ -70,7 +69,7 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 	
 	err:=unspecifiedError
 	err=nil
-	fmt.Println("dirMap: ",dirMap)
+	
 	return result,err
 }
 
