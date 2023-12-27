@@ -298,9 +298,12 @@ func (fs OverlayFS) checkIfDeleted(filename string) bool{
 		
 }
 
-func (fs OverlayFS) checkIfExists(filename string) bool{
-	_,err:=fs.Lstat(filename)
-	return (err==nil)
+func (fs OverlayFS) checkIfExists(filename string) bool{ //We only check whether it's deleted --- if the file does not actually exist, it will be caught by the underlying OS operations
+	if fs.checkIfDeleted(filename){
+		return false
+	}else{
+		return true
+	}
 }
 	
 func (fs OverlayFS) writeToDeletedMapFile(){

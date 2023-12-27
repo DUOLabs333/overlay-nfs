@@ -13,7 +13,7 @@ func (fs OverlayFS) getTarget(filename string) string{
 	
 	for i, _ := range inputDirs {
 		dir:=fs.Join(outputDir,inputDirs[i])
-		if fs.checkIfDeleted(dir){
+		if !fs.checkIfExists(dir){
 			tempSlice:=append([]string{dir},inputDirs[i+1:len(inputDirs)]...)
 			outputDir=fs.Join(tempSlice...) //No point in continuing
 			break
@@ -44,14 +44,14 @@ func (fs OverlayFS) Stat(filename string) (os.FileInfo, error){
 }
 
 func (fs OverlayFS) Lstat(filename string) (os.FileInfo, error){
-	if fs.checkIfDeleted(filename){
+	if !fs.checkIfExists(filename){
 		return nil, os.ErrNotExist
 	}
 	
 	fmt.Println("Lstat:",filename)
 	
 	filename=fs.Join(fs.getTarget(filepath.Dir(filename)),filepath.Base(filename)) //Resolve everything except for the last part
-	if fs.checkIfDeleted(filename){
+	if !fs.checkIfExists(filename){
 		return nil, os.ErrNotExist
 	}
 	

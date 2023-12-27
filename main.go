@@ -41,6 +41,7 @@ func (fs OverlayFS) ReadDir(path string) ([]os.FileInfo, error){
 		dirEntries,err:=os.ReadDir(dir)
 		if err!=nil{
 			if i==0{ //Since the top-level directory determines the behavior of everything else, if it isn't a directory, no point in continuing
+				fmt.Printf("Problem directory: %s\n",dir)
 				return make([]os.FileInfo,0), err
 			}else{ //The higher-level directories cover for it
 				continue
@@ -114,7 +115,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	
 	
 	
-	if (fs.checkIfExists(filename) && fs.getModeofFirstExisting(filename)=="RO" && isWrite){
+	if _,err:=fs.Lstat(filename); err==nil && fs.getModeofFirstExisting(filename)=="RO" && isWrite{
 		fs.deletedMap[filename]=true //Done to force createPath to create file above the current existing one
 		COW:=false
 		COWPath:=""
@@ -287,7 +288,7 @@ defer func (){umount(mountpoint); fmt.Println()}() //Unmount, even when panickin
 go runServer(options,mountpoint)
 
 serverPort:= <- port
-runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft",serverPort),"-vvv","127.0.0.1:/", mountpoint)
+runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft,nordirplus",serverPort),"-vvv","127.0.0.1:/", mountpoint)
 
 <-done //wait until SIGTERM or SIGINT
 }
