@@ -135,11 +135,6 @@ func NewFS(options []string, mountpoint string) (OverlayFS){
 	return result
 }
 
-func (fs OverlayFS) IsEqual( a any) bool{
-	b,_:=a.(OverlayFS)
-	return fs.mountpoint==b.mountpoint
-}
-
 func setPermissions(src, dest string) {
 	srcStat,err:=os.Lstat(src)
 	if err!=nil{
@@ -184,13 +179,15 @@ func (fs OverlayFS) createPath(filename string) (string, error){ //If file is de
 	
 	//The returned path should be everything (including the file, not just the parent directory)
 	
-	fileExists:=fs.checkIfExists(filename)
+	_,err:=fs.Lstat(filename)
+	fileExists:=(err==nil)
 	
 	original_path:=fs.findFirstExisting(filename)
-	_,err:=os.Lstat(original_path)
+	_,err=os.Lstat(original_path)
 	original_path_exists:=(err==nil)
-
-	if !fs.checkIfExists(filepath.Dir(filename)){ //You can not create a file if the parent directory does not exist
+	
+	
+	if _,err=fs.Lstat(filepath.Dir(filename)); err!=nil{ //You can not create a file if the parent directory does not exist
 		return "", os.ErrNotExist
 	}
 	

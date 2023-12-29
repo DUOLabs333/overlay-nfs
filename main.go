@@ -196,7 +196,7 @@ func (fs OverlayFS) OpenFile(filename string, flag int, perm os.FileMode) (billy
 	open,err:=os.OpenFile(filename,flag,perm)
 	
 	fmt.Println("Openfile finished!")
-	return &OverlayFile{open,original_filename},err //Remember to override Name to output the original_filename, not the underlying filename
+	return &OverlayFile{open,original_filename},err
 }
 
 func (fs OverlayFS) Remove(filename string) error{
