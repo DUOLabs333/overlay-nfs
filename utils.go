@@ -46,6 +46,7 @@ type OverlayFS struct {
 
 type OverlayFile struct{
 	*os.File
+	path string
 }
 
 func (*OverlayFile) Unlock() error{
@@ -56,7 +57,11 @@ func (*OverlayFile) Lock() error{
 	return nil
 }
 
-var unspecifiedError error = errors.New("H") //Just an arbitary error
+func (f *OverlayFile) Name() string{
+	return f.path
+}
+
+var unspecifiedError error = errors.New("generic error") //Just an arbitary error
 
 type OverlayStat struct{
 	 os.FileInfo
