@@ -281,7 +281,7 @@ defer func (){umount(mountpoint); fmt.Println()}() //Unmount, even when panickin
 go runServer(options,mountpoint)
 
 serverPort:= <- port
-runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft,nordirplus",serverPort),"-vvv","127.0.0.1:/", mountpoint)
+runCommand("sudo","mount", "-t", "nfs", fmt.Sprintf("-oport=%[1]d,mountport=%[1]d,vers=3,tcp,noacl,nolock,soft",serverPort),"-vvv","127.0.0.1:/", mountpoint)
 
 <-done //wait until SIGTERM or SIGINT
 }
