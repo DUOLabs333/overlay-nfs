@@ -1,5 +1,5 @@
-github.com/DUOLabs333/go-nfs v0.0.2-0.20231229173649-f5689f2e3b28 h1:kdBGEFmQPn2qQE4jr+6FW0xu8q1ZT8ggLR2NlDT5zKg=
-github.com/DUOLabs333/go-nfs v0.0.2-0.20231229173649-f5689f2e3b28/go.mod h1:+7+CzZfrWAP2Ff9h/6MhCMrjmitC21Yxt7nF/erAHNM=
+github.com/DUOLabs333/go-nfs v0.0.2-0.20240101220624-124a04d74eb3 h1:5jzPIwL820+NRbVfvACdb9a9cBX4qdN4c7yp3N67KvA=
+github.com/DUOLabs333/go-nfs v0.0.2-0.20240101220624-124a04d74eb3/go.mod h1:+7+CzZfrWAP2Ff9h/6MhCMrjmitC21Yxt7nF/erAHNM=
 github.com/go-git/go-billy/v5 v5.5.0 h1:yEY4yhzCDuMGSv83oGxiBotRzhwhNr8VZyphhiu+mTU=
 github.com/go-git/go-billy/v5 v5.5.0/go.mod h1:hmexnoNsr2SJU1Ju67OaNz5ASJY3+sHgFRpCtpDCKow=
 github.com/google/uuid v1.5.0 h1:1p67kYwdtXjb0gL0BPiP1Av9wiZPo5A8z2cWkTZ+eyU=
